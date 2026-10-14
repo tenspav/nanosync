@@ -15,6 +15,9 @@ NanoSync is a homebrew app for the iPod nano 7th generation. Copy MP3 files into
 
 It writes the same library files the iPod itself uses, so there is nothing to sync later and no extra player to learn.
 
+> **Requires a modified iPod.** NanoSync only runs on an iPod nano 7th generation that already runs the untethered
+> homebrew firmware. A stock iPod cannot run it. See [Before you start](#before-you-start).
+
 ## Features
 
 - **Imports into the native Music library.** Artist, album, title, track and disc numbers, year, genre, composer and more
@@ -26,9 +29,21 @@ It writes the same library files the iPod itself uses, so there is nothing to sy
 - **Dry run first.** The first run only checks everything and writes nothing.
 - **Small.** About 450 KB, integer-only code, no floating point.
 
+## Before you start
+
+NanoSync is a third-party app. It needs the iPod to be modified first with the **untethered homebrew firmware**, which
+adds the loader that starts apps like this one. That setup is a separate project and is not part of NanoSync:
+
+1. Go to **[olievans123/nano7-untethered](https://github.com/olievans123/nano7-untethered)** and follow the installation
+   instructions in its README to modify the iPod. Read all of it first, including its warnings.
+2. Once the iPod boots with that firmware and can start apps, come back here to build and install NanoSync.
+
+Modifying an iPod can render it unusable and voids any warranty. Back up the iPod before you begin, and do not use an
+iPod you cannot afford to lose.
+
 ## Quick start
 
-1. [Build and install](#install) NanoSync once (needs a Linux PC).
+1. [Modify the iPod](#before-you-start) with the untethered firmware, then [build and install](#build) NanoSync once (needs a Linux PC).
 2. Plug the iPod in and copy your `.mp3` files into `/Apps/Data/Importar`.
 3. Open **NanoSync** on the iPod.
 4. The first run is a dry run. Delete `/Apps/Data/Importar/dryrun.txt`, open the app again and tap **Import**.
