@@ -1,4 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
+<!-- NanoSync v0.0.0 - developed by tenspav -->
 <plist version="1.0"><dict>
 <key>CFBundleIdentifier</key><string>org.nanoapps.nanosync</string>
 <key>CFBundleName</key><string>Nanosync</string>

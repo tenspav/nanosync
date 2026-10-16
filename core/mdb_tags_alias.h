@@ -1,4 +1,4 @@
-/* tag field aliases (ID3 frames, MP4 atoms, Vorbis/ASF names) as an X-macro: X(field, alias...) */
+/* NanoSync v0.0.0 - developed by tenspav */
 X(title, "TIT2", "©nam", "title")
 X(artist, "TPE1", "©ART", "artist", "Author")
 X(album, "TALB", "©alb", "album", "WM/AlbumTitle")

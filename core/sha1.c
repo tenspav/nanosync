@@ -1,3 +1,4 @@
+/* NanoSync v0.0.0 - developed by tenspav */
 #include "sha1.h"
 #define ROL(x,n) (((x)<<(n))|((x)>>(32-(n))))
 static void blk(uint32_t *h, const uint8_t *p) {

@@ -1,26 +1,8 @@
 #!/usr/bin/env bash
-# Installs NanoSync on an iPod nano 7th gen that runs the untethered homebrew firmware, with mtools, while the iPod is
-# attached to Linux in disk mode and its data partition is NOT mounted.
-#
-# What it does: copies a prepared "apps directory" to the iPod data partition:
-#     <apps-dir>/AllApps.pack        -> /Apps/AllApps-B.pack  (slot B)  or /Apps/AllApps.pack (slot A)
-#     <apps-dir>/Executables/*.hbapp -> /Apps/Executables/
-#     <apps-dir>/Icons/*.bin         -> /Apps/Icons/
-# Every file is read back and compared by SHA-256; any failure restores the previous files (or deletes new ones).
-# Overwritten files are also copied to the backup directory first. The pack is written last.
-#
-# What it does NOT do: it does not build the pack. The pack lists ALL apps of the slot, so it must be produced beforehand with the
-# SDK's tools/build_apps.py including every app you want to keep (see docs/installing.md). It never touches the firmware,
-# the resident loaders, the marker file, /Apps/Data or /iPod_Control. After installing, restart the iPod and re-run the
-# resident installer of the firmware project so the new app appears.
-#
-#   sudo ./install-nanosync.sh --apps-dir DIR --device /dev/disk/by-id/usb-Apple_iPod_<SERIAL>-0:0 [--usb-serial ID] [--expected-size BYTES]
-#   ./install-nanosync.sh --apps-dir DIR --image rehearsal.img          (FAT32 image, no root, no device)
+# NanoSync v0.0.0 - developed by tenspav
 set -euo pipefail
 HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-# shellcheck source=nanosync-common.sh
 source "$HERE/nanosync-common.sh"
-
 APPS_DIR=
 usage() {
   cat >&2 <<EOF
@@ -46,13 +28,10 @@ done
 ns_need_tools find sort date
 ns_check_apps_dir "$APPS_DIR"
 ns_open_target
-
-# The slot's pack and the executables/icons we are about to overwrite are snapshotted for rollback.
 stamp=$(date -u +%Y%m%dT%H%M%SZ)
 mapfile -t EXES < <(find "$APPS_DIR/Executables" -maxdepth 1 -type f -name '*.hbapp' -printf '%f\n' | LC_ALL=C sort)
 mapfile -t ICONS < <(find "$APPS_DIR/Icons" -maxdepth 1 -type f -name '*.bin' -printf '%f\n' | LC_ALL=C sort)
 echo "apps   : ${#EXES[@]} executable(s), ${#ICONS[@]} icon(s), pack $(hash_of "$APPS_DIR/AllApps.pack")"
-
 ns_snap "$PACK_DST"
 if [[ -n ${HAD[$PACK_DST]} ]]; then
   cp "$tmp/old$PACK_DST" "$BACKUP_DIR/$(basename "$PACK_DST").before-nanosync.$stamp"
@@ -63,7 +42,6 @@ for f in "${ICONS[@]}"; do ns_snap "/Apps/Icons/$f"; done
 for f in "${EXES[@]}"; do
   if [[ -n ${HAD["/Apps/Executables/$f"]} ]]; then cp "$tmp/old/Apps/Executables/$f" "$BACKUP_DIR/$f.before-nanosync.$stamp"; fi
 done
-
 run() {
   local f
   echo "== executables =="

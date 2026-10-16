@@ -1,10 +1,8 @@
-/* NanoSync PC simulator: runs the SAME ns_engine.c over a directory tree.
-   usage: ns_sim <root> [--block KB] [--battery N] [--crash K] [--mode 0|1] [--failwrite N] [--auto-import] [--stats] [--no-import] [--unix T] */
+/* NanoSync v0.0.0 - developed by tenspav */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include "ns_host.h"
-
 static const char *PH[] = {"INIT","RECOVER","SCAN","TAGS","LIB","READY","CHECK","PLAN","BAK","JRN","COPY","CPVER","TAIL","ART","GEN","WRITE","VERIFY","RMSRC","JDEL","DONE","FAIL"};
 int main(int argc, char **argv) {
     uint32_t block_kb = 1900; int i; volatile int autoimp = 0, stats = 0, noimp = 0; ns_t *s; void *blk; volatile long steps = 0; volatile int imported = 0;

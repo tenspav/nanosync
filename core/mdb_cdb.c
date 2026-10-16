@@ -1,10 +1,9 @@
+/* NanoSync v0.0.0 - developed by tenspav */
 #include "mdb_cdb.h"
 #include "mdb_text.h"
 #include "mdb_zlib.h"
 #include "mdb_sig.h"
 #include "mdb_tmpl.h"
-
-/* ------------------------------------------------------------------ util */
 static uint32_t rd32(const uint8_t *p) { return p[0] | ((uint32_t)p[1] << 8) | ((uint32_t)p[2] << 16) | ((uint32_t)p[3] << 24); }
 static uint16_t rd16(const uint8_t *p) { return (uint16_t)(p[0] | (p[1] << 8)); }
 static uint64_t rd64(const uint8_t *p) { return rd32(p) | ((uint64_t)rd32(p + 4) << 32); }
@@ -15,17 +14,13 @@ static int tagis(const uint8_t *p, const char *t) { return p[0] == t[0] && p[1] 
 static void mcpy(void *d, const void *s, size_t n) { uint8_t *a = d; const uint8_t *b = s; while (n--) *a++ = *b++; }
 static void mset(void *d, int v, size_t n) { uint8_t *a = d; while (n--) *a++ = (uint8_t)v; }
 static int scmp(const char *a, const char *b) { while (*a && *a == *b) { a++; b++; } return (int)(uint8_t)*a - (int)(uint8_t)*b; }
-
 static const char *nz(const char *s) { return s ? s : ""; }
-
 typedef struct { uint8_t *base; size_t cap, used; } arena_t;
 static void *aalloc(arena_t *a, size_t n) {
     void *p; n = (n + 7) & ~(size_t)7;
     if (a->used + n > a->cap) return 0;
     p = a->base + a->used; a->used += n; return p;
 }
-
-/* bounds-checked writer */
 typedef struct { uint8_t *b; size_t cap, pos; int err; } W;
 static uint8_t *wres(W *w, size_t n) {
     uint8_t *p;
@@ -33,8 +28,6 @@ static uint8_t *wres(W *w, size_t n) {
     p = w->b + w->pos; w->pos += n; return p;
 }
 static void wput(W *w, const void *s, size_t n) { uint8_t *p = wres(w, n); if (p) mcpy(p, s, n); }
-
-/* ------------------------------------------------------------- zlib frame */
 int mdb_cdb_unpack(const uint8_t *phys, size_t plen, uint8_t *logical, size_t cap, size_t *llen) {
     uint32_t hs, decl; size_t olen = 0; int r;
     if (plen < 16 || !tagis(phys, "mhbd")) return MDB_E_FORMAT;
@@ -62,8 +55,6 @@ int mdb_cdb_pack(const uint8_t *logical, size_t llen, uint8_t *phys, size_t cap,
     *plen = hs + z;
     return mdb_cdb_sign(phys, *plen, guid) ? MDB_E_FORMAT : MDB_OK;
 }
-
-/* ------------------------------------------------------------------ model */
 enum { S_TITLE, S_ARTIST, S_ALBUM, S_GENRE, S_COMP, S_AA, S_SHOW, S_N };
 enum { O_TITLE, O_ALBUM, O_ARTIST, O_AA, O_COMP, O_SHOW, O_N };
 typedef struct {
@@ -72,7 +63,6 @@ typedef struct {
     uint64_t dbid, dbid2;
     uint8_t compilation;
 } tinfo_t;
-
 static const char *getstr(arena_t *a, const uint8_t *mh) {
     uint32_t tl = rd32(mh + 8), enc = rd32(mh + 24), len = rd32(mh + 28); char *o;
     if (tl < 40 || 40 + len > tl) return "";
@@ -82,7 +72,6 @@ static const char *getstr(arena_t *a, const uint8_t *mh) {
     else { mcpy(o, mh + 40, len); o[len] = 0; }
     return o;
 }
-
 typedef struct {
     const uint8_t *in; size_t in_len; uint32_t hs; int32_t tz;
     arena_t ar; tinfo_t *ti; uint32_t E, N, T;
@@ -91,7 +80,6 @@ typedef struct {
     uint32_t new_albums, new_artists;
     uint32_t *order[16]; uint32_t order_kind[16]; int norder;
 } C;
-
 static const uint8_t *mhsd_at(C *c, size_t off, size_t *next) {
     const uint8_t *p = c->in + off;
     if (off + 96 > c->in_len || !tagis(p, "mhsd")) return 0;
@@ -99,7 +87,6 @@ static const uint8_t *mhsd_at(C *c, size_t off, size_t *next) {
     if (*next > c->in_len || *next < off + 96) return 0;
     return p;
 }
-
 static int parse_mhit(C *c, const uint8_t *m, tinfo_t *t) {
     uint32_t hl = rd32(m + 4), tl = rd32(m + 8), nm = rd32(m + 12), off, i;
     mset(t, 0, sizeof *t);
@@ -133,7 +120,6 @@ static int parse_mhit(C *c, const uint8_t *m, tinfo_t *t) {
     }
     return MDB_OK;
 }
-
 static void track_from_new(tinfo_t *t, const mdb_track_t *n) {
     uint32_t i;
     mset(t, 0, sizeof *t);
@@ -142,12 +128,9 @@ static void track_from_new(tinfo_t *t, const mdb_track_t *n) {
     t->s[S_GENRE] = nz(n->genre); t->s[S_COMP] = nz(n->composer); t->s[S_AA] = nz(n->album_artist); t->s[S_SHOW] = "";
     t->tn = n->track_no; t->disc = n->disc_no;
 }
-
-/* step 1: scan the document */
 static int analyse(C *c) {
     size_t off = c->hs, next; uint32_t ei = 0; int r;
     const uint8_t *s;
-    /* track count */
     c->E = 0;
     for (off = c->hs; off < c->in_len; off = next) {
         s = mhsd_at(c, off, &next);
@@ -204,8 +187,6 @@ static int analyse(C *c) {
     if (ei != c->E) return MDB_E_FORMAT;
     return MDB_OK;
 }
-
-/* step 2: ids of the groups and new tracks */
 static int same_album(const tinfo_t *a, const tinfo_t *b) {
     const char *aa = a->s[S_AA][0] ? a->s[S_AA] : a->s[S_ARTIST], *ba = b->s[S_AA][0] ? b->s[S_AA] : b->s[S_ARTIST];
     return a->compilation == b->compilation && a->season == b->season && !scmp(a->s[S_ALBUM], b->s[S_ALBUM]) && !scmp(aa, ba) && !scmp(a->s[S_SHOW], b->s[S_SHOW]);
@@ -219,7 +200,6 @@ static int assign(C *c) {
         c->asg[i].album_id = c->asg[i].artist_id = c->asg[i].composer_id = 0; c->asg[i].album_sql_id = c->asg[i].artist_sql_id = 0;
         c->asg[i].mhip_pid[0] = c->asg[i].mhip_pid[1] = 0;
     }
-    /* albums */
     for (i = 0; i < c->N; i++) {
         tinfo_t *t = &c->ti[c->E + i]; uint32_t id = 0;
         for (j = 0; j < c->E + i && !id; j++) if (c->ti[j].album_id && same_album(&c->ti[j], t)) id = c->ti[j].album_id;
@@ -249,10 +229,7 @@ static int assign(C *c) {
     }
     return MDB_OK;
 }
-
-/* --------------------------------------------------------------- indexes */
 static const char *nk(C *c, tinfo_t *t, int f) {
-    /* f: 0 title 1 album 2 artist 3 genre 4 composer 5 album-artist(0x23) 6 show */
     if (!t->nk[f]) {
         const char *src; char *o;
         switch (f) {
@@ -271,7 +248,6 @@ static const char *nk(C *c, tinfo_t *t, int f) {
     return t->nk[f];
 }
 static int cmpn(uint32_t a, uint32_t b) { return a < b ? -1 : a > b ? 1 : 0; }
-/* comparison order of the reference sort key */
 static int cmp_kind(C *c, int kind, uint32_t ia, uint32_t ib, int *oom) {
     tinfo_t *a = &c->ti[ia], *b = &c->ti[ib]; int r, i, n = 0; int seq[6];
     static const int8_t dummy = 0; (void)dummy;
@@ -284,7 +260,7 @@ static int cmp_kind(C *c, int kind, uint32_t ia, uint32_t ib, int *oom) {
     case 0x23: seq[n++] = 5; seq[n++] = 1; seq[n++] = -1; seq[n++] = -2; seq[n++] = 0; break;
     case 0x1D: seq[n++] = 6; seq[n++] = -3; seq[n++] = -4; seq[n++] = 0; break;
     case 0x1E: seq[n++] = -3; seq[n++] = -4; seq[n++] = 6; seq[n++] = 0; break;
-    default: seq[n++] = -4; seq[n++] = -3; seq[n++] = 6; seq[n++] = 0; break; /* 0x1F */
+    default: seq[n++] = -4; seq[n++] = -3; seq[n++] = 6; seq[n++] = 0; break;
     }
     for (i = 0; i < n; i++) {
         int f = seq[i];
@@ -301,7 +277,6 @@ static int cmp_kind(C *c, int kind, uint32_t ia, uint32_t ib, int *oom) {
     return 0;
 }
 static int kind_ok(int k) { return k == 3 || k == 4 || k == 5 || k == 7 || k == 0x12 || k == 0x1D || k == 0x1E || k == 0x1F || k == 0x23; }
-
 static uint32_t *get_order(C *c, int kind, int *err) {
     int i; uint32_t n = c->T, w, lo, mid, hi, *a, *b, *tmp; int oom = 0;
     for (i = 0; i < c->norder; i++) if ((int)c->order_kind[i] == kind) return c->order[i];
@@ -309,14 +284,13 @@ static uint32_t *get_order(C *c, int kind, int *err) {
     a = aalloc(&c->ar, 4 * (n + 1)); tmp = aalloc(&c->ar, 4 * (n + 1));
     if (!a || !tmp) { *err = MDB_E_SCRATCH; return 0; }
     for (lo = 0; lo < n; lo++) a[lo] = lo;
-    /* stable bottom-up merge sort */
     for (w = 1; w < n; w <<= 1) {
         for (lo = 0; lo < n; lo += 2 * w) {
             uint32_t i1, i2, k;
             mid = lo + w < n ? lo + w : n; hi = lo + 2 * w < n ? lo + 2 * w : n;
             i1 = lo; i2 = mid; k = lo;
             while (i1 < mid && i2 < hi) {
-                int r = cmp_kind(c, kind, a[i2], a[i1], &oom);   /* take from the right only if strictly smaller */
+                int r = cmp_kind(c, kind, a[i2], a[i1], &oom);
                 if (oom) { *err = MDB_E_SCRATCH; return 0; }
                 tmp[k++] = r < 0 ? a[i2++] : a[i1++];
             }
@@ -328,8 +302,6 @@ static uint32_t *get_order(C *c, int kind, int *err) {
     c->order[c->norder] = a; c->order_kind[c->norder] = (uint32_t)kind; c->norder++;
     return a;
 }
-
-/* ----------------------------------------------------------- mhod writer */
 static void put_mhod_hdr(W *w, uint32_t type, uint32_t tl) {
     uint8_t *p = wres(w, 24);
     if (!p) return;
@@ -424,7 +396,6 @@ static void put_mhii(C *c, W *w, uint32_t i) {
     if (w->err) return;
     wr32(w->b + st + 8, (uint32_t)(w->pos - st)); wr32(w->b + st + 0xC, 1);
 }
-
 static int put_index(C *c, W *w, int kind) {
     int err = 0; uint32_t *o = get_order(c, kind, &err), i, n = c->T, ne = 0, tl; uint8_t *p;
     if (!o) return err;
@@ -432,7 +403,6 @@ static int put_index(C *c, W *w, int kind) {
     p = wres(w, 48 + 4 * (size_t)n); if (!p) return MDB_E_SPACE;
     mset(p, 0, 48 + 4 * (size_t)n); wr32(p, (uint32_t)kind); wr32(p + 4, n);
     for (i = 0; i < n; i++) wr32(p + 48 + 4 * i, o[i]);
-    /* jump table */
     {
         uint32_t last = 0xFFFFFFFFu; size_t save;
         for (i = 0; i < n; i++) {
@@ -465,11 +435,8 @@ static int put_index(C *c, W *w, int kind) {
     }
     return MDB_OK;
 }
-
-/* ------------------------------------------------------------- orchestration */
 size_t mdb_cdb_out_bound(size_t in_len, uint32_t n) { return in_len + (size_t)n * 4096 + 8192; }
 size_t mdb_cdb_scratch_need(size_t in_len, uint32_t n) { return in_len * 3 + (size_t)n * 4096 + 65536; }
-
 int mdb_cdb_add_tracks(const uint8_t *in, size_t in_len, const mdb_track_t *tr, uint32_t n,
                        uint8_t *out, size_t out_cap, size_t *out_len, mdb_assigned_t *asg,
                        void *scratch, size_t scratch_size) {
@@ -489,8 +456,8 @@ int mdb_cdb_add_tracks(const uint8_t *in, size_t in_len, const mdb_track_t *tr, 
         size_t st = w.pos; const uint8_t *L; size_t cstart;
         if (type != 1 && type != 2 && type != 3 && type != 4 && type != 8) { wput(&w, s, next - off); continue; }
         L = s + hl; lc = rd32(L + 8); hsz = rd32(L + 4);
-        wput(&w, s, hl);                         /* mhsd header */
-        { size_t lst = w.pos; wput(&w, L, hsz);   /* list: copy, then adjust the count */
+        wput(&w, s, hl);
+        { size_t lst = w.pos; wput(&w, L, hsz);
           cstart = off + hl + hsz;
           if (type == 1) {
               wput(&w, in + cstart, next - cstart);
@@ -510,7 +477,6 @@ int mdb_cdb_add_tracks(const uint8_t *in, size_t in_len, const mdb_track_t *tr, 
                   const uint8_t *m = in + p; uint32_t mt = rd32(m + 8);
                   if (p + mt > next || !tagis(m, "mhyp")) return MDB_E_FORMAT;
                   if (!(m[0x14] & 1) || rd16(m + 0x50)) { wput(&w, m, mt); p += mt; continue; }
-                  /* master playlist */
                   {
                       size_t ys = w.pos; uint32_t nmod = rd32(m + 12), nip = rd32(m + 16), q = rd32(m + 4), j; int has_idx = 0;
                       for (j = 0, q = rd32(m + 4); j < nmod; j++) { if (rd32(m + q + 12) == 52) has_idx = 1; q += rd32(m + q + 8); }
@@ -522,7 +488,7 @@ int mdb_cdb_add_tracks(const uint8_t *in, size_t in_len, const mdb_track_t *tr, 
                               int kind = (int)rd32(h + 24);
                               if (!kind_ok(kind)) return MDB_E_UNSUPPORTED;
                               r = put_index(&c, &w, kind); if (r) return r;
-                              q += ml; j++;                      /* consumes the following type-53 entry */
+                              q += ml; j++;
                               if (j >= nmod || rd32(m + q + 12) != 53) return MDB_E_FORMAT;
                               q += rd32(m + q + 8);
                               continue;
@@ -530,12 +496,12 @@ int mdb_cdb_add_tracks(const uint8_t *in, size_t in_len, const mdb_track_t *tr, 
                           if (ty == 53) return MDB_E_FORMAT;
                           wput(&w, h, ml); q += ml;
                       }
-                      if (!has_idx) {                          /* empty library: create the 5 default indexes */
+                      if (!has_idx) {
                           static const int dk[5] = {3, 5, 4, 7, 0x12}; int di;
                           for (di = 0; di < 5; di++) { r = put_index(&c, &w, dk[di]); if (r) return r; }
                           if (!w.err) wr32(w.b + ys + 12, nmod + 10);
                       }
-                      wput(&w, m + q, rd32(m + 8) - q);        /* existing mhips */
+                      wput(&w, m + q, rd32(m + 8) - q);
                       for (i = 0; i < n; i++) {
                           asg[i].mhip_pid[slot] = ++mhip_seq;
                           put_mhip(&w, &asg[i], (int)slot, nip + i);
@@ -544,7 +510,7 @@ int mdb_cdb_add_tracks(const uint8_t *in, size_t in_len, const mdb_track_t *tr, 
                   }
                   p += mt;
               }
-              slot += 0;   /* slot advances per mhsd (below) */
+              slot += 0;
           }
         }
         if (type == 2 || type == 3) slot = slot < 1 ? slot + 1 : slot;

@@ -1,13 +1,11 @@
-/* Simple deflate compressor: a single FIXED Huffman block + LZ77 (short chain). Integers only.
-   Output: zlib stream (78 01 ... big-endian adler32), structurally like zlib level 1. */
+/* NanoSync v0.0.0 - developed by tenspav */
 #ifndef MDB_NO_MALLOC
 #include <stdlib.h>
 #endif
 #include "mdb_deflate.h"
 #include "mdb_zlib.h"
-
 typedef struct { uint8_t *o; size_t pos, cap; uint32_t acc; int nb; int err; } bw_t;
-static void put(bw_t *w, uint32_t v, int n) {            /* LSB first */
+static void put(bw_t *w, uint32_t v, int n) {
     w->acc |= v << w->nb; w->nb += n;
     while (w->nb >= 8) { if (w->pos >= w->cap) { w->err = 1; w->nb = 0; w->acc = 0; return; } w->o[w->pos++] = (uint8_t)w->acc; w->acc >>= 8; w->nb -= 8; }
 }
@@ -30,12 +28,10 @@ static void match(bw_t *w, unsigned len, unsigned dist) {
     while (DB[d] > dist) d--;
     huff(w, d, 5); if (DE[d]) put(w, dist - DB[d], DE[d]);
 }
-size_t mdb_zdeflate_bound(size_t n) { return n + n / 8 + 64; }   /* worst case: 9 bits/literal */
+size_t mdb_zdeflate_bound(size_t n) { return n + n / 8 + 64; }
 #define HB 15
 #define MAXCH 24
 static uint32_t hash3(const uint8_t *p) { return (((uint32_t)p[0] << 10) ^ ((uint32_t)p[1] << 5) ^ p[2]) * 2654435761u >> (32 - HB); }
-/* Same output as the malloc-based mdb_zdeflate, byte for byte, but without malloc: work >= MDB_DEFLATE_WORK bytes.
-   The prev table is a ring of 32768 entries (the search already limited the distance to 32768). */
 #define WMASK 32767u
 size_t mdb_zdeflate_w(const uint8_t *in, size_t n, uint8_t *out, size_t cap, void *work, size_t worksz) {
     bw_t w; size_t i = 0; int32_t *head, *prev; uint32_t ad;
@@ -44,7 +40,7 @@ size_t mdb_zdeflate_w(const uint8_t *in, size_t n, uint8_t *out, size_t cap, voi
     w.o = out; w.pos = 0; w.cap = cap; w.acc = 0; w.nb = 0; w.err = 0;
     for (i = 0; i < (1u << HB); i++) head[i] = -1;
     put(&w, 0x78, 8); put(&w, 0x01, 8);
-    put(&w, 1, 1); put(&w, 1, 2);                  /* BFINAL=1 BTYPE=01 (fixed Huffman) */
+    put(&w, 1, 1); put(&w, 1, 2);
     i = 0;
     while (i < n) {
         unsigned bl = 0, bd = 0; size_t adv, k;

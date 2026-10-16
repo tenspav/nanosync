@@ -1,16 +1,12 @@
+/* NanoSync v0.0.0 - developed by tenspav */
 #include "mdb_sig.h"
 #include "sha1.h"
 #include "calcHashAB.h"
-
 static const uint8_t RND[23] = "ABCDEFGHIJKLMNOPQRSTUVW";
-
 void mdb_hashab(uint8_t out[57], const uint8_t sha1[20], const uint8_t guid[8]) {
     calcHashAB(out, sha1, guid, RND);
 }
-
-/* mhbd fields: db_id 0x18(8) unk32 0x32(20) hash58 0x58(20) hash72 0x72(46) hashab 0xAB(57) scheme 0x30(2) */
 static void zrange(mdb_sha1_t *c, const uint8_t *buf, size_t *pos, size_t to, size_t len) {
-    /* feed SHA1 with buf[pos..to) */
     (void)len; mdb_sha1_update(c, buf + *pos, to - *pos); *pos = to;
 }
 static void zeros(mdb_sha1_t *c, size_t *pos, size_t n) {
@@ -18,7 +14,6 @@ static void zeros(mdb_sha1_t *c, size_t *pos, size_t n) {
     *pos += n;
     while (n) { size_t k = n > 64 ? 64 : n; mdb_sha1_update(c, z, k); n -= k; }
 }
-/* SHA1 of the normalized file (fields zeroed, scheme = 4) without copying the file */
 static int norm_sha1(const uint8_t *b, size_t len, uint8_t out[20]) {
     uint32_t hs; mdb_sha1_t c; size_t p = 0;
     static const uint8_t s4[2] = {4, 0};
@@ -44,11 +39,9 @@ int mdb_cdb_sign(uint8_t *b, size_t len, const uint8_t guid[8]) {
 }
 int mdb_cdb_verify(const uint8_t *b, size_t len, const uint8_t guid[8]) {
     uint8_t d[20], h[57]; int i, bad = 0;
-    /* signing zeroes db_id, unk32, hash58, hash72 and hashab first; none of that enters the SHA1 */
     if (norm_sha1(b, len, d)) return 0;
     mdb_hashab(h, d, guid);
     for (i = 0; i < 57; i++) bad |= h[i] ^ b[0xAB+i];
-    /* db_id/unk32/hash58/hash72 are only zeroed in the normalized view; the output keeps them. */
     return !bad && b[0x30] == 3 && b[0x31] == 0;
 }
 size_t mdb_cbk_size(size_t n) { return 57 + 20 + 20 * ((n + 1023) / 1024); }

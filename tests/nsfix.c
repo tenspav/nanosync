@@ -1,9 +1,4 @@
-/* nsfix: test fixture tool for the NanoSync PC simulator.
-     nsfix make   <guid16> <itunes_dir>   write a small, signed, synthetic music library (one track) into <itunes_dir>:
-                                          iTunesCDB, "iTunes Library.itlp/{Library,Locations,Dynamic}.itdb" and Locations.itdb.cbk
-     nsfix verify <guid16> <itunes_dir>   check the HashAB signature of iTunesCDB and the Locations.itdb.cbk signature;
-                                          prints "TRACKS <n>" (track count of the CDB). Exit 0 = valid.
-   <guid16> is any 16 hex digits (the key of the signature). The library content is synthetic test data. */
+/* NanoSync v0.0.0 - developed by tenspav */
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -11,8 +6,6 @@
 #include "mdb_cdb.h"
 #include "mdb_sig.h"
 #include "mdb_sqlgen.h"
-
-/* logical (decompressed) CDB of a one-track library: title "Fixture", artist "Test Artist", album "Fixture" (base64) */
 static const char B64[] =
     "bWhiZPQAAACQGQAAAgAAAE8AAAAIAAAACAcGBQQDAgECAGMCGBcWFRQTEhEAAAAAAwAAAAAAAAAAAAAAAAAAAAAAAAAAAGVu"
     "CAcGBQQDAgEBAAAADwAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAwMf//wAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
@@ -105,7 +98,6 @@ static const char B64[] =
     "AAAAAAAAAAAAAAAAAAAAAAAAAABtaHNkYAAAALwAAAAFAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
     "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAABtaGxwXAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
     "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA==";
-
 static int b64dec(const char *s, uint8_t *o) {
     static const char T[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
     int n = 0; uint32_t acc = 0; int bits = 0;
@@ -136,7 +128,6 @@ static int wr(const char *dir, const char *name, const void *d, size_t n) {
     ok = fwrite(d, 1, n, f) == n; ok &= fclose(f) == 0; return ok ? 0 : -1;
 }
 static uint32_t rd32(const uint8_t *p) { return p[0] | (uint32_t)p[1] << 8 | (uint32_t)p[2] << 16 | (uint32_t)p[3] << 24; }
-
 static int cmd_make(const char *guid, const char *dir) {
     uint8_t g[8], *lg, *phys, *scr; size_t llen, plen = 0, cap = 1u << 20, ss = 16u << 20, k;
     mdb_sqlgen_out_t so; char itl[1100];

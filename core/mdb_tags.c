@@ -1,10 +1,7 @@
-/* MP3 tag reader: ID3v2.2/2.3/2.4 + ID3v1 + MPEG frame header (Xing/Info/VBRI). Integers only.
-   Tag interpretation follows the usual tagger conventions (aliases, priority, whitespace strip, numbers) as exposed by common
-   tag libraries (upgrade to v2.4, genre expansion, ID3v1 at lowest priority). */
+/* NanoSync v0.0.0 - developed by tenspav */
 #include "mdb_tags.h"
 #include "mdb_text.h"
 #include "mdb_genres.h"
-
 static uint32_t be32(const uint8_t *p) { return ((uint32_t)p[0] << 24) | ((uint32_t)p[1] << 16) | ((uint32_t)p[2] << 8) | p[3]; }
 static uint32_t synchsafe(const uint8_t *p) { return ((uint32_t)p[0] << 21) | ((uint32_t)p[1] << 14) | ((uint32_t)p[2] << 7) | p[3]; }
 static uint32_t slen(const char *s) { uint32_t n = 0; while (s[n]) n++; return n; }
@@ -12,19 +9,17 @@ static int seq(const char *a, const char *b) { while (*a && *a == *b) { a++; b++
 static int scmpi(const char *a, const char *b) { while (*a && *a == *b) { a++; b++; } return (int)(uint8_t)*a - (int)(uint8_t)*b; }
 static void put(char *dst, const char *src) { uint32_t i = 0; while (src[i] && i < MDB_TAG_STR - 1) { dst[i] = src[i]; i++; } dst[i] = 0; }
 static char lc(char c) { return (c >= 'A' && c <= 'Z') ? (char)(c + 32) : c; }
-
-#define BIG 4096          /* short temporary text */
-#define LONGCAP (1u << 17) /* comment/lyrics limit (UTF-8 bytes) */
+#define BIG 4096
+#define LONGCAP (1u << 17)
 #define MAXF 600
 typedef struct {
-    char id[5]; uint8_t enc, dead; const uint8_t *d; uint32_t n;   /* d,n = payload after the encoding byte (enc 0xFF = synthetic UTF-8; POPM: raw) */
-    uint32_t toff;                                                 /* start of text (TXXX/COMM/USLT: after desc) */
+    char id[5]; uint8_t enc, dead; const uint8_t *d; uint32_t n;
+    uint32_t toff;
     const char *desc; char lang[4];
 } fr_t;
 typedef struct {
     fr_t f[MAXF]; uint32_t nf; mdb_tags_t *t; char *xb; uint32_t xcap, xused;
 } cx_t;
-
 static char *xalloc(cx_t *c, uint32_t n) {
     char *p; if (c->xused + n > c->xcap) return 0;
     p = c->xb + c->xused; c->xused += n; return p;
@@ -34,8 +29,6 @@ static char *dupx(cx_t *c, const char *s) {
     for (k = 0; (p[k] = s[k]); k++) ;
     return p;
 }
-
-/* ---------- whitespace (Python str.strip semantics) */
 static int is_ws(uint32_t c) {
     return (c >= 9 && c <= 13) || (c >= 0x1C && c <= 0x20) || c == 0x85 || c == 0xA0 || c == 0x1680 || (c >= 0x2000 && c <= 0x200A) ||
            c == 0x2028 || c == 0x2029 || c == 0x202F || c == 0x205F || c == 0x3000;
@@ -48,8 +41,6 @@ static void strip(char *s) {
     p = start; while (p < end) *o++ = *p++;
     *o = 0;
 }
-
-/* ---------- decode one terminated item starting at *pos; returns 1 if an item was produced */
 static int dec_item(const uint8_t *d, uint32_t n, uint32_t *pos, uint8_t enc, char *out, uint32_t cap) {
     uint32_t i = *pos, o = 0;
     out[0] = 0;
@@ -77,7 +68,6 @@ static int dec_item(const uint8_t *d, uint32_t n, uint32_t *pos, uint8_t enc, ch
     }
     out[o] = 0; *pos = i; return 1;
 }
-/* first non-empty item of the frame text (strip if dostrip) */
 static int frame_text(const fr_t *f, int dostrip, char *out, uint32_t cap) {
     uint32_t pos = f->toff;
     while (dec_item(f->d, f->n, &pos, f->enc, out, cap)) {
@@ -85,8 +75,6 @@ static int frame_text(const fr_t *f, int dostrip, char *out, uint32_t cap) {
     }
     out[0] = 0; return 0;
 }
-
-/* ---------- genre (TCON genre expansion, two passes) */
 #define NGEN ((uint32_t)(sizeof MDB_GENRES / sizeof MDB_GENRES[0]))
 static int isdig(const char *s) { if (!*s) return 0; for (; *s; s++) if (*s < '0' || *s > '9') return 0; return 1; }
 static const char *gname(const char *id) {
@@ -119,7 +107,7 @@ static void genres_of(const glist_t *in, glist_t *out) {
                 p = q + 1;
             }
             for (j = 0; j < nn; j++) gadd(out, gname(ids[j]));
-            { uint32_t r = 0; while (p[r] && p[r] != '\n' && r < 255) { rest[r] = p[r]; r++; } rest[r] = 0; }   /* the optional text group does not cross \n */
+            { uint32_t r = 0; while (p[r] && p[r] != '\n' && r < 255) { rest[r] = p[r]; r++; } rest[r] = 0; }
             if (rest[0]) {
                 const char *gn = rest[0] == '(' ? rest + 1 : rest; int dup = 0;
                 for (j = base; j < out->n; j++) if (seq(out->v[j], gn)) dup = 1;
@@ -132,14 +120,12 @@ static int genre_first(const fr_t *f, char *out) {
     glist_t a, b, c2; uint32_t pos = f->toff; char tmp[256];
     a.n = 0;
     while (a.n < 8 && dec_item(f->d, f->n, &pos, f->enc, tmp, sizeof tmp)) gadd(&a, tmp);
-    genres_of(&a, &b);          /* re-assigning the genres re-escapes them; the net effect is one pass */
+    genres_of(&a, &b);
     (void)c2;
     if (!b.n) return 0;
     put(out, b.v[0]); return 1;
 }
-
-/* ---------- frame lookup (key/name semantics) */
-static void normkey(const char *s, char *o) {      /* remove ' ', '_' and '-' after casefold (ASCII) */
+static void normkey(const char *s, char *o) {
     for (; *s; s++) { if (*s == ' ' || *s == '_' || *s == '-') continue; *o++ = lc(*s); }
     *o = 0;
 }
@@ -153,9 +139,9 @@ static void keyof(const fr_t *f, char *key) {
 static int find_alias(cx_t *c, const char *alias) {
     char na[300], nk[300], key[300], bestkey[300]; int best = -1; uint32_t i;
     if (slen(alias) >= 280) return -1;
-    for (i = c->nf; i-- > 0;) if (plain(&c->f[i]) && seq(c->f[i].id, alias)) return (int)i;       /* alias among the keys */
+    for (i = c->nf; i-- > 0;) if (plain(&c->f[i]) && seq(c->f[i].id, alias)) return (int)i;
     normkey(alias, na);
-    for (i = 0; i < c->nf; i++) {         /* lookup by normalized key: first in key order */
+    for (i = 0; i < c->nf; i++) {
         const fr_t *f = &c->f[i];
         if (f->dead || !(plain(f) || (seq(f->id, "TXXX") && f->desc && slen(f->desc) < 280))) continue;
         normkey(plain(f) ? f->id : f->desc, nk);
@@ -179,7 +165,6 @@ static const char *const *const AL[F_N] = {
 #include "mdb_tags_alias.h"
 #undef X
 };
-/* field value: first alias with non-empty text (lyrics: no strip) */
 static int field(cx_t *c, int fld, char *out, uint32_t cap) {
     const char *const *a = AL[fld]; out[0] = 0;
     for (; *a; a++) {
@@ -189,9 +174,7 @@ static int field(cx_t *c, int fld, char *out, uint32_t cap) {
     }
     return 0;
 }
-
-/* ---------- numeric/boolean/date interpretation */
-static int numtxt(const char *s, uint32_t max, uint32_t *v) {      /* number: ascii digits only, <= 10 digits, <= max */
+static int numtxt(const char *s, uint32_t max, uint32_t *v) {
     uint64_t x = 0; uint32_t l = 0;
     if (!*s) return 0;
     for (; *s; s++, l++) { if (*s < '0' || *s > '9' || l >= 10) return 0; x = x * 10 + (uint32_t)(*s - '0'); }
@@ -213,7 +196,6 @@ static int64_t days_from_civil(int64_t y, int64_t m, int64_t d) {
 }
 static int dig(const char *s, int n) { int i; for (i = 0; i < n; i++) if (s[i] < '0' || s[i] > '9') return 0; return 1; }
 static int num_n(const char *s, int n) { int v = 0, i; for (i = 0; i < n; i++) v = v * 10 + (s[i] - '0'); return v; }
-/* release date: YYYY | YYYY-MM | ISO 8601 subset (YYYY-MM-DD, YYYYMMDD, [T| ]HH[:MM[:SS[.f]]], Z/+HH:MM). 0 = invalid */
 static int64_t release_date(const char *s) {
     int y, mo = 1, d = 1, hh = 0, mi = 0, ss = 0, sign = 0, th = 0, tm = 0; const char *p = s; int64_t secs, off;
     uint32_t l = slen(s);
@@ -240,8 +222,6 @@ have:
     if (secs <= -2082844800LL || secs > 2212122495LL) return 0;
     return secs;
 }
-
-/* ---------- frame collection */
 static const char *const V22[][2] = {
     {"TT2","TIT2"},{"TP1","TPE1"},{"TAL","TALB"},{"TCO","TCON"},{"TYE","TYER"},{"TRK","TRCK"},{"TPA","TPOS"},{"TCM","TCOM"},{"TP2","TPE2"},
     {"COM","COMM"},{"ULT","USLT"},{"TXX","TXXX"},{"TBP","TBPM"},{"TT1","TIT1"},{"TT3","TIT3"},{"TCR","TCOP"},{"TPB","TPUB"},{"TCP","TCMP"},
@@ -274,7 +254,7 @@ static void addframe(cx_t *c, const char *id, const uint8_t *d, uint32_t n) {
         if (!f->desc) c->nf--;
     }
 }
-static void synth(cx_t *c, const char *id, const char *txt) {      /* synthetic UTF-8 text frame */
+static void synth(cx_t *c, const char *id, const char *txt) {
     char *b = dupx(c, txt); fr_t *f;
     if (!b || !(f = newfr(c, id))) return;
     f->d = (const uint8_t *)b; f->n = slen(txt) + 1; f->enc = 0xFF;
@@ -295,7 +275,7 @@ static void parse_id3v2(cx_t *c, const uint8_t *b, size_t len, uint32_t tagsize)
             for (k = 0; k < sizeof V22 / sizeof V22[0]; k++)
                 if (id[0] == V22[k][0][0] && id[1] == V22[k][0][1] && id[2] == V22[k][0][2]) { uint32_t m; for (m = 0; m < 4; m++) id[m] = V22[k][1][m]; id[4] = 0; break; }
         }
-        if (ver == 4) { if (fl & 0x0001) { if (sz >= 4) { d += 4; sz -= 4; } else skip = 1; } if (fl & 0x000C) skip = 1; }    /* compression/encryption; per-frame unsync: ignored */
+        if (ver == 4) { if (fl & 0x0001) { if (sz >= 4) { d += 4; sz -= 4; } else skip = 1; } if (fl & 0x000C) skip = 1; }
         if (ver == 3 && (fl & 0x00C0)) skip = 1;
         if (!skip) addframe(c, id, d, sz);
         p += hdr + sz;
@@ -323,9 +303,8 @@ static void kill_ids(cx_t *c, const char *id) { uint32_t i; for (i = 0; i < c->n
 static int first_of(cx_t *c, const char *id) { uint32_t i; int r = -1; for (i = 0; i < c->nf; i++) if (!c->f[i].dead && seq(c->f[i].id, id)) r = (int)i; return r; }
 static void first_text(cx_t *c, int i, char *out, uint32_t cap) {
     uint32_t pos; out[0] = 0; if (i < 0) return;
-    pos = c->f[i].toff; dec_item(c->f[i].d, c->f[i].n, &pos, c->f[i].enc, out, cap);     /* first item (empty ones are not skipped) */
+    pos = c->f[i].toff; dec_item(c->f[i].d, c->f[i].n, &pos, c->f[i].enc, out, cap);
 }
-/* upgrade to v2.4: TYER/TDAT/TIME -> TDRC (only if there is no TDRC) */
 static void upd24(cx_t *c) {
     int iy = first_of(c, "TYER");
     if (iy >= 0 && first_of(c, "TDRC") < 0) {
@@ -347,8 +326,6 @@ static void upd24(cx_t *c) {
     }
     kill_ids(c, "TYER"); kill_ids(c, "TDAT"); kill_ids(c, "TIME");
 }
-
-/* COMM/USLT ordered by (has desc, desc, lang): first with non-empty text. skipitun ignores "itun*" comments. */
 static int best_cl(cx_t *c, const char *id, int skipitun, char *out, uint32_t cap, int dostrip, uint32_t *count) {
     uint32_t i, cnt = 0; int best = -1; char tmp[BIG];
     out[0] = 0;
@@ -376,7 +353,6 @@ static void note(mdb_tags_t *t, const char *name) {
     if (n) t->ignored[n++] = ',';
     for (k = 0; k <= l; k++) t->ignored[n + k] = name[k];
 }
-
 static void id3_interpret(cx_t *c) {
     mdb_tags_t *t = c->t; char *tmp, *lb; uint32_t v, i, cnt = 0; char date[64], tt[BIG];
     tmp = xalloc(c, LONGCAP); lb = xalloc(c, LONGCAP);
@@ -395,16 +371,13 @@ static void id3_interpret(cx_t *c) {
     if (field(c, F_copyright, tmp, LONGCAP)) t->copyright = dupx(c, tmp);
     if (field(c, F_content_provider, tmp, LONGCAP)) t->content_provider = dupx(c, tmp);
     if (field(c, F_lyrics, tmp, LONGCAP)) t->lyrics = dupx(c, tmp);
-    /* ID3: USLT and COMM (ordered by desc/lang) take priority over the aliases */
-    best_cl(c, "USLT", 0, lb, LONGCAP, 0, &cnt);        /* cnt = number of USLT frames */
+    best_cl(c, "USLT", 0, lb, LONGCAP, 0, &cnt);
     if (lb[0]) t->lyrics = dupx(c, lb);
     t->lyrics_frames = cnt;
     if (best_cl(c, "COMM", 1, lb, LONGCAP, 1, 0) >= 0) t->comment = dupx(c, lb);
-    /* date */
     date[0] = 0; if (field(c, F_date, tt, 63)) put(date, tt);
     if (date[0]) { char y4[5]; uint32_t y = 0; for (i = 0; i < 4 && date[i]; i++) y4[i] = date[i]; y4[i] = 0; if (numtxt(y4, 9999, &y)) t->year = y; }
     { char rd[64]; rd[0] = 0; if (field(c, F_release_date, tt, 63)) put(rd, tt); else put(rd, date); if (rd[0]) t->release_date = release_date(rd); }
-    /* track / disc */
     {
         char tr[64], dc[64], trt[64], dct[64]; char *sl; uint32_t k;
         tr[0] = dc[0] = trt[0] = dct[0] = 0;
@@ -422,7 +395,7 @@ static void id3_interpret(cx_t *c) {
         if (numtxt(trt, 0xFFFFFFFFu, &v)) t->total_tracks = v;
         if (numtxt(dct, 0xFFFFFFFFu, &v)) t->total_discs = v;
     }
-    if (field(c, F_bpm, tt, 63)) {      /* "149.8" -> "149" (\d{1,5}\.\d+) */
+    if (field(c, F_bpm, tt, 63)) {
         uint32_t l = slen(tt), k = 0; while (k < l && tt[k] >= '0' && tt[k] <= '9') k++;
         if (k >= 1 && k <= 5 && tt[k] == '.' && k + 1 < l && dig(tt + k + 1, (int)(l - k - 1))) tt[k] = 0;
         if (numtxt(tt, 65535, &v)) t->bpm = v;
@@ -435,7 +408,7 @@ static void id3_interpret(cx_t *c) {
         if (seq(l2, "1") || seq(l2, "4") || seq(l2, "explicit")) t->explicit_flag = 1;
         else if (seq(l2, "2") || seq(l2, "clean")) t->explicit_flag = 2;
     }
-    {   /* POPM -> rating (ordered by email) */
+    {
         char beml[128]; int have = 0; uint32_t k, bv = 0;
         beml[0] = 0;
         for (k = 0; k < c->nf; k++) {
@@ -448,7 +421,7 @@ static void id3_interpret(cx_t *c) {
         }
         if (have) t->rating = bv == 0 ? 0 : bv <= 31 ? 20 : bv <= 95 ? 40 : bv <= 159 ? 60 : bv <= 223 ? 80 : 100;
     }
-    {   /* fields a full tagger would use but this tool does NOT write: warn */
+    {
         static const int unsup[] = { F_sort_title, F_sort_artist, F_sort_album, F_sort_album_artist, F_sort_composer, F_normalization_gain_db, F_sound_check, F_media_kind,
                                      F_podcast, F_category, F_podcast_rss_url, F_podcast_enclosure_url, F_track_keywords, F_show, F_episode, F_season_number, F_episode_number,
                                      F_tv_network, F_sort_show, F_purchase_account, F_purchaser_name };
@@ -462,18 +435,15 @@ static void id3_interpret(cx_t *c) {
             if (!f->dead && seq(f->id, "COMM") && f->desc && lc(f->desc[0]) == 'i' && lc(f->desc[1]) == 't' && lc(f->desc[2]) == 'u' && lc(f->desc[3]) == 'n' && lc(f->desc[4]) == 'n' && lc(f->desc[5]) == 'o' && lc(f->desc[6]) == 'r' && lc(f->desc[7]) == 'm' && !f->desc[8]) { note(t, "sound_check(iTunNORM)"); break; }
         }
     }
-    /* lyrics: only when there is exactly one USLT and it is the text (otherwise the MP3 would have to be rewritten) */
     if (t->lyrics && t->lyrics[0] && !blank(t->lyrics)) {
         if (t->lyrics_frames == 1) t->lyrics_flag = 1;
         else { t->lyrics = 0; note(t, "lyrics(USLT count != 1: would need an MP3 rewrite)"); }
     } else t->lyrics = 0;
 }
-
-/* parse ID3v2/v1 and return the start of the audio */
 static size_t id3_all(const uint8_t *b, size_t len, mdb_tags_t *t) {
     static cx_t sc; cx_t *c = &sc; size_t p = 0;
     c->nf = 0; c->t = t; c->xb = t->xbuf; c->xcap = t->xcap; c->xused = 0;
-    if (!t->xbuf) { /* no work memory: header only */
+    if (!t->xbuf) {
         if (len >= 10 && b[0] == 'I' && b[1] == 'D' && b[2] == '3' && b[3] >= 2 && b[3] <= 4) { p = 10 + synchsafe(b + 6); if (b[5] & 0x10) p += 10; }
         return p;
     }
@@ -486,18 +456,14 @@ static size_t id3_all(const uint8_t *b, size_t len, mdb_tags_t *t) {
     id3_interpret(c);
     return p;
 }
-
 static const uint16_t BR_L1[16] = {0,32,64,96,128,160,192,224,256,288,320,352,384,416,448,0};
 static const uint16_t BR_L2[16] = {0,32,48,56,64,80,96,112,128,160,192,224,256,320,384,0};
 static const uint16_t BR_L3[16] = {0,32,40,48,56,64,80,96,112,128,160,192,224,256,320,0};
-static const uint16_t BR_L3H[16] = {0,8,16,24,32,40,48,56,64,80,96,112,128,144,160,0};   /* MPEG2/2.5 L2/L3 */
+static const uint16_t BR_L3H[16] = {0,8,16,24,32,40,48,56,64,80,96,112,128,144,160,0};
 static const uint16_t BR_L1H[16] = {0,32,48,56,64,80,96,112,128,144,160,176,192,224,256,0};
-
 #ifndef MDB_TAGS_DFLT_X
-#define MDB_TAGS_DFLT_X (1u << 20)   /* the app (NanoSync) defines 16: it always passes xbuf */
+#define MDB_TAGS_DFLT_X (1u << 20)
 #endif
-/* total = real file size; len = bytes in b. If total > len, the last 128 B of b are the real tail of the file (ID3v1) and the
-   prefix comes before it (used by NanoSync, which does not load the whole MP3). With total == len: normal behavior. */
 static int tags_impl(const uint8_t *b, size_t len, size_t total, mdb_tags_t *t) {
     size_t p = 0, start; uint32_t i; char *xb = t->xbuf; uint32_t xc = t->xcap;
     static char dflt_x[MDB_TAGS_DFLT_X];
@@ -505,14 +471,13 @@ static int tags_impl(const uint8_t *b, size_t len, size_t total, mdb_tags_t *t) 
     if (!xb) { xb = dflt_x; xc = sizeof dflt_x; }
     t->xbuf = xb; t->xcap = xc;
     p = id3_all(b, len, t);
-    /* find the first valid frame (2 consecutive coherent frames) */
     for (start = p; start + 4 < len && start < p + 65536; start++) {
         uint8_t h1, h2, h3; uint32_t ver, layer, bri, sri, br, sr, spf, fsz, pad; const uint16_t *tab;
         if (b[start] != 0xFF || (b[start + 1] & 0xE0) != 0xE0) continue;
         h1 = b[start + 1]; h2 = b[start + 2]; h3 = b[start + 3]; (void)h3;
         ver = (h1 >> 3) & 3; layer = (h1 >> 1) & 3; bri = h2 >> 4; sri = (h2 >> 2) & 3; pad = (h2 >> 1) & 1;
         if (ver == 1 || layer == 0 || bri == 0 || bri == 15 || sri == 3) continue;
-        {   /* ver: 3 = MPEG1, 2 = MPEG2, 0 = MPEG2.5 ; layer: 3=L1 2=L2 1=L3 */
+        {
             static const uint16_t SR[3][3] = {{44100,48000,32000},{22050,24000,16000},{11025,12000,8000}};
             int vi = ver == 3 ? 0 : ver == 2 ? 1 : 2;
             sr = SR[vi][sri];
@@ -526,7 +491,7 @@ static int tags_impl(const uint8_t *b, size_t len, size_t total, mdb_tags_t *t) 
             if (start + fsz + 4 < len) { if (b[start + fsz] != 0xFF || (b[start + fsz + 1] & 0xE0) != 0xE0) continue; }
             t->sample_rate = sr; t->bitrate_kbps = br; t->layer = 4 - layer; t->mpeg = ver == 3 ? 1 : 2;
             t->channels = ((b[start + 3] >> 6) == 3) ? 1 : 2;
-            {   /* Xing/Info/VBRI */
+            {
                 uint32_t side = ver == 3 ? (t->channels == 1 ? 17 : 32) : (t->channels == 1 ? 9 : 17);
                 const uint8_t *x = b + start + 4 + side; uint32_t frames = 0, bytes = 0;
                 if (start + 4 + side + 16 < len && ((x[0] == 'X' && x[1] == 'i' && x[2] == 'n' && x[3] == 'g') || (x[0] == 'I' && x[1] == 'n' && x[2] == 'f' && x[3] == 'o'))) {
@@ -546,7 +511,7 @@ static int tags_impl(const uint8_t *b, size_t len, size_t total, mdb_tags_t *t) 
                     size_t audio = total - start; uint32_t mpl = 0;
                     if (len >= 128 && b[len - 128] == 'T' && b[len - 127] == 'A' && b[len - 126] == 'G') audio -= 128;
                     (void)mpl;
-                    t->duration_ms = (uint32_t)((uint64_t)audio * 8 / br);     /* bytes*8 / (kbit/s) = ms */
+                    t->duration_ms = (uint32_t)((uint64_t)audio * 8 / br);
                 }
             }
             return 0;

@@ -1,8 +1,7 @@
-/* Generates Library.itdb / Locations.itdb / Dynamic.itdb from the logical iTunesCDB. */
+/* NanoSync v0.0.0 - developed by tenspav */
 #include "mdb_sqlgen.h"
 #include "mdb_text.h"
 #include "sha1.h"
-
 static uint16_t rd16(const uint8_t *p) { return (uint16_t)(p[0] | (p[1] << 8)); }
 static uint32_t rd32(const uint8_t *p) { return p[0] | ((uint32_t)p[1] << 8) | ((uint32_t)p[2] << 16) | ((uint32_t)p[3] << 24); }
 static uint64_t rd64(const uint8_t *p) { return rd32(p) | ((uint64_t)rd32(p + 4) << 32); }
@@ -10,7 +9,6 @@ static int tagis(const uint8_t *p, const char *t) { return p[0] == t[0] && p[1] 
 static int scmp(const char *a, const char *b) { while (*a && *a == *b) { a++; b++; } return (int)(uint8_t)*a - (int)(uint8_t)*b; }
 static size_t slen(const char *s) { size_t n = 0; while (s[n]) n++; return n; }
 static void mcpy(void *d, const void *s, size_t n) { uint8_t *a = d; const uint8_t *b = s; while (n--) *a++ = *b++; }
-
 enum { S_TITLE, S_ARTIST, S_ALBUM, S_GENRE, S_COMP, S_AA, S_SHOW, S_EPISODE, S_COMMENT, S_CATEGORY, S_GROUPING, S_DESC, S_COPYRIGHT,
        S_STITLE, S_SARTIST, S_SALBUM, S_SAA, S_SCOMP, S_EQ, S_LOC, S_LYRICS, S_N };
 typedef struct {
@@ -18,28 +16,23 @@ typedef struct {
     uint64_t pid; uint32_t track_id, media_kind, year, content_rating, compilation, checked_flag, remember, skip_shuffle, gapless_album, artwork_id;
     uint32_t start, stop, length, tn, total_tracks, disc, total_discs, bpm, play_count, rating, app_rating, skip_count, bookmark;
     int32_t volume; uint32_t sound_check;
-    int64_t last_modified, last_played, last_skipped, date_added, release, added_itunes;   /* unix */
+    int64_t last_modified, last_played, last_skipped, date_added, release, added_itunes;
     uint32_t size, bitrate, rate, pregap, postgap, gapless, gapless_payload, filetype, lyrics_flag, album_id, artist_id, composer_id, season, episode;
     uint64_t sample_count;
     int64_t pid_album, pid_artist, pid_tartist, pid_comp;
     uint32_t genre_id, category_id, album_order, ord;
 } qt_t;
-
 typedef struct { const char *album, *aa, *show; int64_t native; uint32_t first, nmem; int64_t pid; } agrp_t;
 typedef struct { const char *key; int64_t native; int64_t pid; } kgrp_t;
-
 typedef struct {
     mdb_arena_t *ar; const mdb_schema_t *sc; mtab_t *tab[3]; int32_t tz;
     qt_t *t; uint32_t n; uint64_t dbid; const char *devname;
 } G;
-
-/* ---------------------------------------------------------- values/rows */
 static mval_t V_I(int64_t x) { mval_t v; v.t = MV_INT; v.i = x; v.s = 0; v.n = 0; return v; }
 static mval_t V_N(void) { mval_t v; v.t = MV_NULL; v.i = 0; v.s = 0; v.n = 0; return v; }
 static mval_t V_R(uint32_t x) { mval_t v; v.t = MV_REAL; v.i = (int64_t)mdb_f64_from_u32(x); v.s = 0; v.n = 0; return v; }
 static mval_t V_T(const char *s) { mval_t v; v.t = MV_TEXT; v.i = 0; v.s = s; v.n = (uint32_t)slen(s); return v; }
-static mval_t V_TN(const char *s) { return (s && s[0]) ? V_T(s) : V_N(); }   /* text, or NULL if empty */
-
+static mval_t V_TN(const char *s) { return (s && s[0]) ? V_T(s) : V_N(); }
 static int tabidx(const mdb_schema_t *sc, const char *name) {
     int i; for (i = 0; i < sc->ntab; i++) if (!scmp(sc->tab[i].name, name)) return i;
     return -1;
@@ -48,7 +41,6 @@ static int colidx(const mdb_tab_t *t, const char *name) {
     int i; for (i = 0; i < t->ncols; i++) if (!scmp(t->cols[i].name, name)) return i;
     return -1;
 }
-/* apply column affinity */
 static mval_t aff(const mdb_col_t *c, mval_t v) {
     if (c->aff == 'R' && v.t == MV_INT) return V_R((uint32_t)v.i);
     return v;
@@ -71,7 +63,6 @@ static mrow_t *newrow(G *g, int db, int ti, int64_t rowid_auto) {
     r->rowid = rowid_auto;
     return r;
 }
-/* positional row: vals[0..n) in the first columns */
 static int addrow(G *g, int db, const char *tname, int64_t auto_rowid, const mval_t *vals, int n) {
     int ti = tabidx(&g->sc[db], tname), c; const mdb_tab_t *t = &g->sc[db].tab[ti]; mrow_t *r;
     r = newrow(g, db, ti, auto_rowid); if (!r) return MDB_SQL_E_MEM;
@@ -80,8 +71,6 @@ static int addrow(G *g, int db, const char *tname, int64_t auto_rowid, const mva
     return 0;
 }
 #define ROW(db, tn, auto_id, ...) do { mval_t _v[] = {__VA_ARGS__}; int _r = addrow(g, db, tn, auto_id, _v, (int)(sizeof _v / sizeof _v[0])); if (_r) return _r; } while (0)
-
-/* ----------------------------------------------------------------- parse */
 static const char *mstr(mdb_arena_t *ar, const uint8_t *mh) {
     uint32_t tl = rd32(mh + 8), enc = rd32(mh + 24), len = rd32(mh + 28); char *o;
     if (tl < 40 || 40 + len > tl) return "";
@@ -91,12 +80,10 @@ static const char *mstr(mdb_arena_t *ar, const uint8_t *mh) {
 }
 static int64_t mac2unix(const G *g, uint32_t m, int utc) { return m ? (int64_t)m - 2082844800LL - (utc ? 0 : g->tz) : 0; }
 static int64_t core(int64_t unix_s) { return unix_s ? unix_s - 978307200LL : 0; }
-
 static int parse_cdb(G *g, const uint8_t *cdb, size_t len, uint32_t *ntr) {
     uint32_t hs = rd32(cdb + 4), cnt = 0; size_t off;
     if (len < 244 || !tagis(cdb, "mhbd")) return MDB_SQL_E_FORMAT;
     g->tz = (int32_t)rd32(cdb + 0x6C); g->dbid = rd64(cdb + 0x18); g->devname = "iPod";
-    /* count and read */
     for (off = hs; off < len;) {
         const uint8_t *s = cdb + off; uint32_t type, hl, tl;
         if (!tagis(s, "mhsd")) return MDB_SQL_E_FORMAT;
@@ -141,7 +128,7 @@ static int parse_cdb(G *g, const uint8_t *cdb, size_t len, uint32_t *ntr) {
             uint32_t c = rd32(s + hl + 8), i; size_t p = off + hl + rd32(s + hl + 4);
             for (i = 0; i < c; i++) {
                 const uint8_t *y = cdb + p;
-                if (!(y[0x14] & 1) || rd16(y + 0x50)) return MDB_SQL_E_UNSUPPORTED;        /* user/podcast playlists: out of scope */
+                if (!(y[0x14] & 1) || rd16(y + 0x50)) return MDB_SQL_E_UNSUPPORTED;
                 if (type == 3 && rd32(y + 12) > 0) {
                     const uint8_t *h = y + rd32(y + 4);
                     if (rd32(h + 12) == 1) { const char *d = mstr(g->ar, h); if (!d) return MDB_SQL_E_MEM; g->devname = d; }
@@ -154,14 +141,11 @@ static int parse_cdb(G *g, const uint8_t *cdb, size_t len, uint32_t *ntr) {
     *ntr = cnt;
     return 0;
 }
-
-/* ------------------------------------------------------------- utilities */
 static const char *casefold_s(G *g, const char *s) {
     char *o = mdb_aalloc(g->ar, mdb_casefold(s, 0) + 1); if (!o) return 0;
     mdb_casefold(s, o); return o;
 }
 static const char *strip_article(G *g, const char *s) {
-    /* album name for sorting: remove "the "/"an "/"a " (casefold comparison, cut by length) */
     static const char *art[3] = {"the ", "an ", "a "}; int i;
     for (i = 0; i < 3; i++) {
         size_t n = slen(art[i]); size_t k;
@@ -182,7 +166,6 @@ static int64_t stable_pid(const char *kind, const char *p1, const char *p2, cons
     for (i = 7; i >= 0; i--) v = (v << 8) | d[i];
     return (int64_t)(v ? v : 1);
 }
-/* pid allocation */
 static int alloc_pids(G *g, const char *kind, uint32_t n, const char *const *p1, const char *const *p2, const char *const *p3, const int64_t *native, int64_t *out) {
     uint32_t i, j; (void)g;
     for (i = 0; i < n; i++) {
@@ -198,7 +181,6 @@ static int alloc_pids(G *g, const char *kind, uint32_t n, const char *const *p1,
     }
     return 0;
 }
-/* ranks: rank of each name in a set of names (by casefold) */
 static int name_rank(G *g, const char *const *names, uint32_t n, uint32_t *rank) {
     uint32_t i, j, m = 0; const char **keys = mdb_aalloc(g->ar, sizeof(char *) * (n + 1));
     if (!keys) return MDB_SQL_E_MEM;
@@ -216,7 +198,6 @@ static int name_rank(G *g, const char *const *names, uint32_t n, uint32_t *rank)
     }
     return 0;
 }
-/* stable text ids (genre/category): rank by (casefold, value) among distinct values */
 static int text_ids(G *g, int field, uint32_t *idout, uint32_t n) {
     uint32_t i, j;
     for (i = 0; i < n; i++) {
@@ -241,7 +222,6 @@ static const char *ext_of(const char *path) {
     return dot ? dot + 1 : "";
 }
 static int file_location(G *g, const char *loc, const char **out) {
-    /* file location: normalize separators; strip "iPod_Control/Music" */
     size_t n = slen(loc), i, st = 0; char *o = mdb_aalloc(g->ar, n + 2); const char *parts[16]; int np = 0; char *w;
     if (!o) return MDB_SQL_E_MEM;
     for (i = 0; i < n; i++) o[i] = (loc[i] == ':' || loc[i] == '\\') ? '/' : loc[i];
@@ -261,8 +241,6 @@ static int file_location(G *g, const char *loc, const char **out) {
         mcpy(q, parts[np - 2], l1); q += l1; *q++ = '/'; mcpy(q, parts[np - 1], l2); q += l2; *q = 0; *out = r; return 0; }
     *out = parts[0]; return 0;
 }
-
-/* ----------------------------------------------------------------- build */
 int mdb_sqlgen_build(const uint8_t *cdb, size_t len, mdb_sqlgen_out_t *o, void *scratch, size_t scratch_size) {
     G gg, *g = &gg; mdb_arena_t ar; uint32_t n = 0, i; int r, db;
     agrp_t *ag; uint32_t nag = 0; kgrp_t *ar_k, *ta_k, *co_k; uint32_t nar = 0, nta = 0, nco = 0;
@@ -280,10 +258,9 @@ int mdb_sqlgen_build(const uint8_t *cdb, size_t len, mdb_sqlgen_out_t *o, void *
     g->n = n;
     for (i = 0; i < n; i++) {
         qt_t *q = &g->t[i];
-        if (q->media_kind & ~(uint32_t)1) return MDB_SQL_E_UNSUPPORTED;     /* music audio only */
+        if (q->media_kind & ~(uint32_t)1) return MDB_SQL_E_UNSUPPORTED;
         { const char *ex = ext_of(q->s[S_LOC]); if (scmp(ex, "mp3") && scmp(ex, "MP3")) return MDB_SQL_E_UNSUPPORTED; }
     }
-    /* album groups: key (album, album_artist||artist, show) */
     ag = mdb_aalloc(&ar, sizeof(agrp_t) * (n + 1)); agi = mdb_aalloc(&ar, 4 * (n + 1));
     ar_k = mdb_aalloc(&ar, sizeof(kgrp_t) * (n + 1)); ta_k = mdb_aalloc(&ar, sizeof(kgrp_t) * (n + 1)); co_k = mdb_aalloc(&ar, sizeof(kgrp_t) * (n + 1));
     if (n && (!ag || !agi || !ar_k || !ta_k || !co_k)) return MDB_SQL_E_MEM;
@@ -299,7 +276,6 @@ int mdb_sqlgen_build(const uint8_t *cdb, size_t len, mdb_sqlgen_out_t *o, void *
         for (k = 0; k < nco; k++) if (!scmp(co_k[k].key, q->s[S_COMP])) break;
         if (k == nco) { co_k[k].key = q->s[S_COMP]; co_k[k].native = q->composer_id; nco++; }
     }
-    /* pids */
     names = mdb_aalloc(&ar, sizeof(char *) * (n + 1) * 3); tmp_n = mdb_aalloc(&ar, 8 * (n + 1)); tmp_o = mdb_aalloc(&ar, 8 * (n + 1));
     if (n && (!names || !tmp_n || !tmp_o)) return MDB_SQL_E_MEM;
     { const char **p1 = names, **p2 = names + n, **p3 = names + 2 * n;
@@ -311,7 +287,6 @@ int mdb_sqlgen_build(const uint8_t *cdb, size_t len, mdb_sqlgen_out_t *o, void *
       alloc_pids(g, "track_artist", nta, p1, 0, 0, tmp_n, tmp_o); for (i = 0; i < nta; i++) ta_k[i].pid = tmp_o[i];
       for (i = 0; i < nco; i++) { p1[i] = co_k[i].key; tmp_n[i] = co_k[i].native; }
       alloc_pids(g, "composer", nco, p1, 0, 0, tmp_n, tmp_o); for (i = 0; i < nco; i++) co_k[i].pid = tmp_o[i]; }
-    /* album ranks (name without article) and sort_album ranks per track */
     snames = mdb_aalloc(&ar, sizeof(char *) * (n + 1)); arank = mdb_aalloc(&ar, 4 * (n + 1)); srank = mdb_aalloc(&ar, 4 * (n + 1)); aorder = mdb_aalloc(&ar, 4 * (n + 1));
     gid = mdb_aalloc(&ar, 4 * (n + 1)); cid = mdb_aalloc(&ar, 4 * (n + 1));
     if (n && (!snames || !arank || !srank || !aorder || !gid || !cid)) return MDB_SQL_E_MEM;
@@ -322,15 +297,12 @@ int mdb_sqlgen_build(const uint8_t *cdb, size_t len, mdb_sqlgen_out_t *o, void *
     r = text_ids(g, S_GENRE, gid, n); if (r) return r;
     r = text_ids(g, S_CATEGORY, cid, n); if (r) return r;
     (void)aorder;
-
-    /* ---- Library ---- */
     ROW(0, "version_info", 0, V_I(1), V_I(1), V_I(111), V_I(0), V_I(0), V_I(1104), V_I(2));
     ROW(0, "db_info", 0, V_I((int64_t)g->dbid), V_I((int64_t)(g->dbid ? g->dbid : 1)), V_N(), V_I(-1), V_I(-1), V_N(), V_N(), V_N());
     ROW(0, "location_kind_map", 0, V_I(1), V_T("MPEG audio file"));
     ROW(0, "location_kind_map", 0, V_I(2), V_T("Purchased AAC audio file"));
     ROW(0, "location_kind_map", 0, V_I(3), V_T("AAC audio file"));
     ROW(1, "base_location", 0, V_I(1), V_T("iPod_Control/Music"));
-    /* genre_map / category_map */
     for (i = 0; i < n; i++) if (gid[i]) {
         uint32_t k, dup = 0; for (k = 0; k < i; k++) if (gid[k] == gid[i]) dup = 1;
         if (!dup) ROW(0, "genre_map", 0, V_I(gid[i]), V_T(g->t[i].s[S_GENRE]), V_I(gid[i]), V_I(0), V_I(1), V_I(0), V_I(0), V_I(0));
@@ -339,7 +311,6 @@ int mdb_sqlgen_build(const uint8_t *cdb, size_t len, mdb_sqlgen_out_t *o, void *
         uint32_t k, dup = 0; for (k = 0; k < i; k++) if (cid[k] == cid[i]) dup = 1;
         if (!dup) ROW(0, "category_map", 0, V_I(cid[i]), V_T(g->t[i].s[S_CATEGORY]));
     }
-    /* album */
     for (i = 0; i < nag; i++) {
         uint32_t k, artw = 0, allc = 1, anyc = 0, season = 0, sr = 0; int64_t artw_pid = 0; int64_t artist_pid = 0; const char *sname = 0;
         for (k = 0; k < n; k++) if (agi[k] == i) {
@@ -355,7 +326,6 @@ int mdb_sqlgen_build(const uint8_t *cdb, size_t len, mdb_sqlgen_out_t *o, void *
     for (i = 0; i < nar; i++) ROW(0, "artist", 0, V_I(ar_k[i].pid), V_I(2), V_I(0), V_I(0), V_TN(ar_k[i].key), V_I(100), V_TN(ar_k[i].key), V_I(ar_k[i].key[0] ? 0 : 1), V_I(1), V_I(0));
     for (i = 0; i < nta; i++) ROW(0, "track_artist", 0, V_I(ta_k[i].pid), V_TN(ta_k[i].key), V_I(100), V_TN(ta_k[i].key), V_I(1), V_I(0), V_I(1), V_I(ta_k[i].key[0] ? 0 : 1), V_I(0));
     for (i = 0; i < nco; i++) ROW(0, "composer", 0, V_I(co_k[i].pid), V_TN(co_k[i].key), V_I(100), V_TN(co_k[i].key), V_I(co_k[i].key[0] ? 0 : 1), V_I(1));
-
     for (i = 0; i < n; i++) {
         qt_t *q = &g->t[i]; const mdb_tab_t *it = &MDB_SCHEMAS[0].tab[tabidx(&MDB_SCHEMAS[0], "item")]; mrow_t *rw; int ti = tabidx(&MDB_SCHEMAS[0], "item"); uint32_t k;
         const char *aa = q->s[S_AA][0] ? q->s[S_AA] : q->s[S_ARTIST]; const char *loc; const char *ex;
@@ -369,7 +339,7 @@ int mdb_sqlgen_build(const uint8_t *cdb, size_t len, mdb_sqlgen_out_t *o, void *
         rw = newrow(g, 0, ti, (int64_t)q->pid); if (!rw) return MDB_SQL_E_MEM;
         v = rw->v;
         SETI("pid", (int64_t)q->pid); SETI("media_kind", q->media_kind);
-        SETI("is_song", (q->media_kind & 1) ? 1 : 0);                      /* MEDIA_TYPE_AUDIO = 1 */
+        SETI("is_song", (q->media_kind & 1) ? 1 : 0);
         SETI("date_modified", core(q->last_modified)); SETI("year", q->year); SETI("content_rating", q->content_rating); SETI("is_compilation", q->compilation);
         SETI("is_user_disabled", q->checked_flag); SETI("remember_bookmark", q->remember); SETI("exclude_from_shuffle", q->skip_shuffle);
         SETI("part_of_gapless_album", q->gapless_album); SETI("artwork_status", q->artwork_id ? 1 : 0); SETI("artwork_cache_id", q->artwork_id);
@@ -407,11 +377,9 @@ int mdb_sqlgen_build(const uint8_t *cdb, size_t len, mdb_sqlgen_out_t *o, void *
         for (i = 0; i < n; i++) if (g->t[i].date_added > mx) mx = g->t[i].date_added;
         now = core(mx);
         ROW(0, "container", 0, V_I(mpid), V_I(0), V_I(now), V_I(now), V_T(g->devname), V_I(100), V_I(0), V_I(1), V_I(0), V_I(1), V_I(0), V_N(), V_N(), V_I(0), V_N(), V_N(), V_N(), V_N(), V_N(), V_N(), V_N());
-        /* container: smart_* columns per the container insert rule (smart_is_folder=0, dynamic/filtered/genius/enabled/limited=NULL, ... evaluation_order=0) */
         for (i = 0; i < n; i++) ROW(0, "item_to_container", (int64_t)i + 1, V_I((int64_t)g->t[i].pid), V_I(mpid), V_I(i), V_N());
         ROW(2, "container_ui", 0, V_I(mpid), V_I(0), V_I(0), V_I(1), V_I(0), V_I(0), V_I(0));
     }
-    /* write the three files */
     {
         size_t cap;
         cap = o->cap[0]; r = mdb_sqlite_write(&MDB_SCHEMAS[0], g->tab[0], o->buf[0], cap, &o->len[0], &ar); if (r) return r;

@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
-# Tests install-nanosync.sh, update-nanosync.sh and remove-nanosync.sh against a FAT32 image (no iPod, no root).
-# Needs: mtools (mcopy, mdir, mdel, mmd), dosfstools (mkfs.vfat), coreutils.
+# NanoSync v0.0.0 - developed by tenspav
 set -u
 HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 T=$(dirname "$HERE")/tools
@@ -12,9 +11,7 @@ PASS=0; FAILN=0
 ok()    { PASS=$((PASS+1)); echo "[PASS] $*"; }
 bad()   { FAILN=$((FAILN+1)); echo "[FAIL] $*"; }
 check() { if eval "$2"; then ok "$1"; else bad "$1   (condition: $2)"; fi; }
-
-# --- fake apps directories (opaque bytes: the scripts never parse them)
-mkapps() {   # mkapps DIR GENERATION  (generation changes the Nanosync executable and the pack)
+mkapps() {
   local d=$1 g=$2
   rm -rf "$d"; mkdir -p "$d/Executables" "$d/Icons"
   head -c 3000 /dev/zero | tr '\0' "a" > "$d/Executables/Other.hbapp"
@@ -41,7 +38,7 @@ rd() { rm -f "$W/rd"; mcopy -n -i "$IMG" "::$1" "$W/rd" 2>/dev/null && sha256sum
 hs() { sha256sum < "$1" | cut -c1-64; }
 snapshot() { local d; d=$(mktemp -d); mcopy -s -n -i "$IMG" ::/ "$d" >/dev/null 2>&1; (cd "$d" && find . -type f -print0 | LC_ALL=C sort -z | xargs -0 sha256sum) | sha256sum | cut -c1-16; rm -rf "$d"; }
 SHIM=$W/shim; mkdir -p "$SHIM"
-mkshim() {   # mkshim PATTERN: the first overwrite (mcopy -o) of a destination matching PATTERN fails
+mkshim() {
   rm -f "$SHIM/once"
   cat > "$SHIM/mcopy" <<EOF
 #!/bin/bash
@@ -51,7 +48,6 @@ exec $(command -v mcopy) "\$@"
 EOF
   chmod +x "$SHIM/mcopy"
 }
-
 echo "### install"
 mkimg; BEFORE_OLD=$(rd /Apps/AllApps-B.pack)
 "$T/install-nanosync.sh" --apps-dir "$W/apps1" --image "$IMG" --backup-dir "$BK" > "$W/i.out" 2>&1; rc=$?
@@ -61,13 +57,11 @@ check "install: slot B detected from the marker" "grep -q 'slot   : B' $W/i.out"
 check "install: pack, 3 executables and 3 icons written and verified" "[ \"\$(rd /Apps/AllApps-B.pack)\" = \"\$(hs $W/apps1/AllApps.pack)\" ] && [ \"\$(rd '/Apps/Executables/Game Two.hbapp')\" = \"\$(hs '$W/apps1/Executables/Game Two.hbapp')\" ] && [ \"\$(rd /Apps/Executables/Nanosync.hbapp)\" = \"\$(hs $W/apps1/Executables/Nanosync.hbapp)\" ] && [ \"\$(rd /Apps/Icons/Nanosync.bin)\" = \"\$(hs $W/apps1/Icons/Nanosync.bin)\" ]"
 check "install: slot A pack, marker and queued MP3 untouched" "[ \"\$(rd /Apps/AllApps.pack)\" = \"\$(hs $W/slotA)\" ] && [ \"\$(rd /Apps/Startup/resident-B.active)\" = \"\$(hs $W/marker)\" ] && [ \"\$(rd /Apps/Data/Importar/queued.mp3)\" = \"\$(hs $W/queued.mp3)\" ]"
 check "install: previous pack saved in the backup dir with the same hash" "[ \"\$(hs \$(ls $BK/AllApps-B.pack.before-nanosync.* | head -1))\" = \"$BEFORE_OLD\" ]"
-
 echo "### rollback: failure injected while writing the Nanosync icon"
 mkimg; S0=$(snapshot); mkshim "Icons/Nanosync.bin"
 PATH="$SHIM:$PATH" "$T/install-nanosync.sh" --apps-dir "$W/apps1" --image "$IMG" --backup-dir "$BK" > "$W/r.out" 2>&1; rc=$?
 tail -3 "$W/r.out"
 check "rollback: rc != 0, ROLLBACK_OK and the image is identical to the initial state" "[ $rc != 0 ] && grep -q ROLLBACK_OK $W/r.out && [ $S0 = \$(snapshot) ]"
-
 echo "### update"
 mkimg; "$T/install-nanosync.sh" --apps-dir "$W/apps1" --image "$IMG" --backup-dir "$BK" >/dev/null 2>&1
 echo "log" > "$W/log.txt"; mcopy -o -i "$IMG" "$W/log.txt" ::/Apps/Data/Importar/log.txt
@@ -85,7 +79,6 @@ PATH="$SHIM:$PATH" "$T/update-nanosync.sh" --apps-dir "$W/apps2" --image "$IMG" 
 check "update with an injected failure: rc != 0, ROLLBACK_OK, image unchanged" "[ $rc != 0 ] && grep -q ROLLBACK_OK $W/u3.out && [ $S0 = \$(snapshot) ]"
 mkimg; "$T/update-nanosync.sh" --apps-dir "$W/apps2" --image "$IMG" --backup-dir "$BK" > "$W/u4.out" 2>&1
 check "update without NanoSync installed is refused (use install)" "[ \$? != 0 ] && grep -q 'not installed' $W/u4.out"
-
 echo "### remove"
 mkimg; "$T/install-nanosync.sh" --apps-dir "$W/apps1" --image "$IMG" --backup-dir "$BK" >/dev/null 2>&1
 "$T/remove-nanosync.sh" --pack "$W/pack_without.pack" --pack-sha256 "$(hs $W/pack_without.pack)" --image "$IMG" --backup-dir "$BK" > "$W/m.out" 2>&1; rc=$?
@@ -94,7 +87,6 @@ check "remove: rc 0 and REMOVE_OK" "[ $rc = 0 ] && grep -q REMOVE_OK $W/m.out"
 check "remove: pack replaced; Nanosync executable and icon gone; other apps and the queued MP3 stay" "[ \"\$(rd /Apps/AllApps-B.pack)\" = \"\$(hs $W/pack_without.pack)\" ] && ! mdir -i $IMG ::/Apps/Executables/Nanosync.hbapp >/dev/null 2>&1 && ! mdir -i $IMG ::/Apps/Icons/Nanosync.bin >/dev/null 2>&1 && [ -n \"\$(rd '/Apps/Executables/Game Two.hbapp')\" ] && [ -n \"\$(rd /Apps/Data/Importar/queued.mp3)\" ]"
 "$T/remove-nanosync.sh" --pack "$W/pack_without.pack" --pack-sha256 deadbeef --image "$IMG" --backup-dir "$BK" > "$W/m2.out" 2>&1
 check "remove: wrong --pack-sha256 is refused" "[ \$? != 0 ] && grep -q 'does not match' $W/m2.out"
-
 echo "### refusals"
 "$T/install-nanosync.sh" --apps-dir "$W/apps1" --image "$W/missing.img" > "$W/x1.out" 2>&1
 check "image that does not exist" "[ \$? != 0 ] && grep -q REFUSED $W/x1.out"

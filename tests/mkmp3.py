@@ -1,14 +1,6 @@
 #!/usr/bin/env python3
-"""Generate small synthetic MP3 files (silent MPEG-1 Layer III frames) with ID3v2.3 tags for the NanoSync tests.
-
-usage: mkmp3.py OUTFILE --title T --artist A [--album AL] [--genre G] [--year Y] [--track N]
-                [--cover none|baseline|progressive|png] [--frames N] [--junk-tag-kb N]
-
-No audio content is shipped with the repository; every file is generated here. The cover images are tiny synthetic
-JPEGs embedded below (baseline 320x320 and progressive 800x800: a gradient with a circle and a square).
-"""
+# NanoSync v0.0.0 - developed by tenspav
 import argparse, base64, struct, sys
-
 BASELINE_B64 = (
     "/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDABIMDRANCxIQDhAUExIVGywdGxgYGzYnKSAsQDlEQz85Pj1HUGZXR0thTT0+WXlaYWlt"
     "cnNyRVV9hnxvhWZwcm7/2wBDARMUFBsXGzQdHTRuST5Jbm5ubm5ubm5ubm5ubm5ubm5ubm5ubm5ubm5ubm5ubm5ubm5ubm5ubm5u"
@@ -297,27 +289,16 @@ PROGRESSIVE_B64 = (
     "9Wp2VfdOW6O+bc7K247qy3R3xanZV77ry3R3vanZV77sy3R3tanZV925bo71tTsq+7st0d6Wp2Vfd+W6O87c7N45bo7ytTsq9945"
     "bo7xtTsq995Zbo7wiwdlX3nluju+1OzeuW6O7osHZV965bo+g//Z"
 )
-
 PNG_MIN = base64.b64decode(
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==")
-
-
 def synchsafe(n):
     return bytes([(n >> 21) & 0x7F, (n >> 14) & 0x7F, (n >> 7) & 0x7F, n & 0x7F])
-
-
 def frame(fid, payload):
     return fid.encode("ascii") + struct.pack(">I", len(payload)) + b"\x00\x00" + payload
-
-
 def text_frame(fid, text):
     return frame(fid, b"\x03" + text.encode("utf-8"))
-
-
 def apic(mime, data):
     return frame("APIC", b"\x00" + mime.encode() + b"\x00" + b"\x03" + b"\x00" + data)
-
-
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("out")
@@ -331,7 +312,6 @@ def main():
     ap.add_argument("--frames", type=int, default=400, help="number of 417/418 byte silent frames (26 ms each)")
     ap.add_argument("--junk-tag-kb", type=int, default=0, help="pad the ID3 tag with this many KB (big tags)")
     a = ap.parse_args()
-
     frames = b""
     if a.title:
         frames += text_frame("TIT2", a.title)
@@ -353,8 +333,6 @@ def main():
         frames += apic("image/png", PNG_MIN)
     tag_body = frames + b"\x00" * (a.junk_tag_kb * 1024)
     tag = b"ID3\x03\x00\x00" + synchsafe(len(tag_body)) + tag_body
-
-    # MPEG-1 Layer III, 128 kbit/s, 44.1 kHz, no CRC, padding alternates to keep the average frame size
     audio = bytearray()
     acc = 0.0
     for _ in range(a.frames):
@@ -366,7 +344,5 @@ def main():
         audio += hdr + b"\x00" * (size - 4)
     with open(a.out, "wb") as f:
         f.write(tag + bytes(audio))
-
-
 if __name__ == "__main__":
     main()

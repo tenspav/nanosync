@@ -1,6 +1,5 @@
+/* NanoSync v0.0.0 - developed by tenspav */
 #include "mdb_text.h"
-
-/* ---- UTF-8 / UTF-16 ---- */
 uint32_t mdb_u8next(const char **pp) {
     const uint8_t *p = (const uint8_t *)*pp; uint32_t c = *p;
     if (c < 0x80) { *pp += 1; return c; }
@@ -46,9 +45,6 @@ size_t mdb_u16le_to_u8(const uint8_t *in, size_t nbytes, char *out) {
     if (out) out[n] = 0;
     return n;
 }
-
-/* ---- normalization: NFKD (Latin-1) + casefold (ASCII, Latin-1, Greek, Cyrillic) ---- */
-/* base letter and combining mark of U+00C0..U+00FF; 0 = no decomposition */
 #include "mdb_text_tab.h"
 static uint32_t lower1(uint32_t c) {
     if (c >= 'A' && c <= 'Z') return c + 32;
@@ -58,7 +54,6 @@ static uint32_t lower1(uint32_t c) {
     if (c >= 0x410 && c <= 0x42F) return c + 32;
     if (c >= 0x400 && c <= 0x40F) return c + 80;
     if (c >= 0x100 && c <= 0x17F && c != 0x130 && c != 0x131 && c != 0x138 && c != 0x149 && c != 0x17F && c != 0x178) {
-        /* Latin Extended-A: even/odd pairs (even = upper case) and the 0x139..0x148 / 0x179..0x17E block (odd = upper case) */
         if ((c >= 0x139 && c <= 0x148) || (c >= 0x179 && c <= 0x17E)) return (c & 1) ? c + 1 : c;
         return (c & 1) ? c : c + 1;
     }
@@ -129,7 +124,7 @@ uint32_t mdb_jump_letter(const char *key) {
         if (c >= 0x100 && c <= 0x17F && c != 0x138) {
             int lowerodd = !((c >= 0x139 && c <= 0x148) || (c >= 0x179 && c <= 0x17E));
             if (c == 0x130) return c;
-            if ((c & 1) == (lowerodd ? 1 : 0)) return c - 1;   /* lower case -> upper case */
+            if ((c & 1) == (lowerodd ? 1 : 0)) return c - 1;
             return c;
         }
         if (c >= 0x3B1 && c <= 0x3C9 && c != 0x3C2) return c - 32;

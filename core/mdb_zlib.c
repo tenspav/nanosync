@@ -1,5 +1,5 @@
+/* NanoSync v0.0.0 - developed by tenspav */
 #include "mdb_zlib.h"
-
 uint32_t mdb_adler32(const uint8_t *p, size_t n) {
     uint32_t a = 1, b = 0;
     while (n) {
@@ -9,7 +9,6 @@ uint32_t mdb_adler32(const uint8_t *p, size_t n) {
     }
     return (b << 16) | a;
 }
-
 size_t mdb_zstore_bound(size_t n) { return 2 + n + 5 * (n / 65535 + 1) + 4; }
 size_t mdb_zstore(const uint8_t *in, size_t n, uint8_t *out) {
     size_t o = 0, i = 0; uint32_t ad = mdb_adler32(in, n);
@@ -24,12 +23,9 @@ size_t mdb_zstore(const uint8_t *in, size_t n, uint8_t *out) {
     out[o++] = ad >> 24; out[o++] = ad >> 16; out[o++] = ad >> 8; out[o++] = ad;
     return o;
 }
-
-/* ---- inflate (canonical Huffman by counts, puff style) ---- */
 #define MAXBITS 15
 typedef struct { uint16_t count[MAXBITS + 1]; uint16_t symbol[288]; } huff_t;
 typedef struct { const uint8_t *in; size_t ilen, ipos; uint32_t bitbuf; int bitcnt; uint8_t *out; size_t ocap, opos; } st_t;
-
 static int bits(st_t *s, int need) {
     long v = (long)s->bitbuf;
     while (s->bitcnt < need) {
@@ -66,7 +62,6 @@ static const uint16_t LBASE[29] = {3,4,5,6,7,8,9,10,11,13,15,17,19,23,27,31,35,4
 static const uint8_t LEXT[29] = {0,0,0,0,0,0,0,0,1,1,1,1,2,2,2,2,3,3,3,3,4,4,4,4,5,5,5,5,0};
 static const uint16_t DBASE[30] = {1,2,3,4,5,7,9,13,17,25,33,49,65,97,129,193,257,385,513,769,1025,1537,2049,3073,4097,6145,8193,12289,16385,24577};
 static const uint8_t DEXT[30] = {0,0,0,0,1,1,2,2,3,3,4,4,5,5,6,6,7,7,8,8,9,9,10,10,11,11,12,12,13,13};
-
 static int codes(st_t *s, const huff_t *lc, const huff_t *dc) {
     int sym;
     for (;;) {
@@ -128,7 +123,6 @@ static int dynamic(st_t *s) {
     if (err && (err < 0 || ndist != dc.count[0] + dc.count[1])) return -1;
     return codes(s, &lc, &dc);
 }
-
 int mdb_inflate(const uint8_t *in, size_t ilen, uint8_t *out, size_t ocap, size_t *olen, size_t *consumed) {
     st_t s; int last, type, err = 0;
     s.in = in; s.ilen = ilen; s.ipos = 0; s.bitbuf = 0; s.bitcnt = 0; s.out = out; s.ocap = ocap; s.opos = 0;

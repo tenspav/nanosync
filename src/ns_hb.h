@@ -1,3 +1,4 @@
+/* NanoSync v0.0.0 - developed by tenspav */
 #ifndef NS_HB_H
 #define NS_HB_H
 #include "ns_engine.h"

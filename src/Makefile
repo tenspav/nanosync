@@ -1,12 +1,8 @@
-# NanoSync app Makefile, for the NanoApps SDK build system.
-# Usage: copy src/ to <NanoApps>/apps/nanosync and core/ to <NanoApps>/apps/nanosync/core, then
-#        make NS_GUID=<16 hex digits of the iPod serial>
-# (tools/build.sh does exactly that.)
+# NanoSync v0.0.0 - developed by tenspav
 APP_NAME    := nanosync
 ifndef NS_GUID
 $(error NS_GUID is not set: pass the iPod's 16 hex digit serial number, e.g. make NS_GUID=0123456789ABCDEF)
 endif
-# portable C core (HashAB, CDB writer, SQLite writer, tags, deflate, TJpgDec)
 CORE        ?= core
 SRCS        := nanosync.c ns_engine.c ns_art.c $(CORE)/tjpgd.c ns_hb.c \
                $(CORE)/mdb_sig.c $(CORE)/sha1.c $(CORE)/calcHashAB.c $(CORE)/cipher.c $(CORE)/cipher_tables.c $(CORE)/edonr.c \

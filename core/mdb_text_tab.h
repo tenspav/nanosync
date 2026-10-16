@@ -1,4 +1,4 @@
-/* generated: NFKD of U+00A0..U+017F (up to 3 code points; 0,0,0 = no decomposition) */
+/* NanoSync v0.0.0 - developed by tenspav */
 #define DEC_LO 0xA0
 #define DEC_HI 0x180
 static const uint16_t DEC_TAB[224][3] = {

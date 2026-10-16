@@ -1,38 +1,21 @@
 #!/usr/bin/env bash
-# Shared helpers for install-nanosync.sh, update-nanosync.sh and remove-nanosync.sh. Source it, do not run it.
-#
-# Target selection (set by the caller's option parser before calling ns_open_target):
-#   DEVICE         block device of the iPod, e.g. /dev/disk/by-id/usb-Apple_iPod_<SERIAL>-0:0   (needs root)
-#   IMAGE          FAT32 image file instead of a device (dry-run rehearsal, no root, no device)
-#   USB_SERIAL     optional: refuse unless the device reports exactly this USB serial number
-#   EXPECTED_SIZE  optional: refuse unless the whole disk has exactly this size in bytes
-#   SLOT           A, B or auto (default auto: B when /Apps/Startup/resident-B.active exists, otherwise A)
-#   BACKUP_DIR     where backups of overwritten files are kept (default ./nanosync-backup)
-#
-# After ns_open_target: PART (the data partition or the image), PACK_DST (/Apps/AllApps.pack or /Apps/AllApps-B.pack),
-# tmp (scratch dir), and the functions ns_exists, ns_read_hash, ns_snap, ns_write_verify, ns_rollback below.
+# NanoSync v0.0.0 - developed by tenspav
 set -euo pipefail
 umask 077
-
 MARKER=/Apps/Startup/resident-B.active
 EXE_NAME="Nanosync.hbapp"
 ICON_NAME="Nanosync.bin"
 BACKUP_DIR=${BACKUP_DIR:-./nanosync-backup}
 LOCK_DIR=${NANOSYNC_LOCK_DIR:-/var/lock}
 DEVICE= IMAGE= USB_SERIAL= EXPECTED_SIZE= SLOT=auto
-
 die() { printf 'REFUSED: %s\n' "$*" >&2; exit 1; }
 hash_of() { sha256sum -- "$1" | awk '{print $1}'; }
-
 ns_need_tools() {
   local tool
   for tool in sha256sum awk mdir mcopy mdel readlink mktemp "$@"; do
     command -v "$tool" >/dev/null 2>&1 || die "missing tool: $tool"
   done
 }
-
-# Validates the target and sets PART. Device mode refuses unless: root, block device, model iPod, optional serial and size
-# match, no partition of the disk is mounted, data partition exists, and the maintenance lock is free.
 ns_open_target() {
   [[ -n $DEVICE || -n $IMAGE ]] || die "give --device DEV or --image FILE"
   [[ -z $DEVICE || -z $IMAGE ]] || die "use --device OR --image, not both"
@@ -75,11 +58,8 @@ ns_open_target() {
   esac
   echo "slot   : $SLOT  (app pack: $PACK_DST)"
 }
-
 ns_exists() { mdir -i "$PART" "::$1" >/dev/null 2>&1; }
 ns_read_hash() { rm -f "$tmp/read"; mcopy -n -i "$PART" "::$1" "$tmp/read" 2>/dev/null || return 1; hash_of "$tmp/read"; }
-
-# Pack directory sanity: AllApps.pack plus Executables/Nanosync.hbapp and Icons/Nanosync.bin.
 ns_check_apps_dir() {
   local d=$1
   [[ -n $d && -d $d ]] || die "--apps-dir must be the directory that contains AllApps.pack, Executables/ and Icons/"
@@ -87,16 +67,13 @@ ns_check_apps_dir() {
   [[ -f $d/Executables/$EXE_NAME ]] || die "$d/Executables/$EXE_NAME missing (was nanosync included when the pack was built?)"
   [[ -f $d/Icons/$ICON_NAME ]] || die "$d/Icons/$ICON_NAME missing"
 }
-
 declare -A HAD=()
 WROTE=()
-# ns_snap <path on iPod>: remember the current content (and whether it existed) for rollback.
 ns_snap() {
   local dst=$1 f="$tmp/old$1"
   mkdir -p "$(dirname "$f")"
   if ns_exists "$dst"; then mcopy -n -i "$PART" "::$dst" "$f"; HAD[$dst]=$(hash_of "$f"); else HAD[$dst]=; fi
 }
-# ns_write_verify <local file> <path on iPod> [skip-if-equal]: write, read back, compare SHA-256.
 ns_write_verify() {
   local src=$1 dst=$2 skip=${3:-} want
   want=$(hash_of "$src")

@@ -1,5 +1,5 @@
-/* generated from blank library databases (fixed schema) */
-typedef struct { const char *name; char aff; uint8_t dtype; int64_t di; const char *ds; } mdb_col_t; /* aff I/R/T/B/N; dtype 0 NULL,1 int,2 real,3 text */
+/* NanoSync v0.0.0 - developed by tenspav */
+typedef struct { const char *name; char aff; uint8_t dtype; int64_t di; const char *ds; } mdb_col_t;
 typedef struct { const char *name; uint8_t ncols; int8_t rowid_col; const mdb_col_t *cols; } mdb_tab_t;
 typedef struct { const char *name; uint8_t tab; uint8_t ncols; uint8_t cols[4]; } mdb_idx_t;
 typedef struct { uint8_t is_index; uint8_t ref; const char *name; const char *tbl; const char *sql; } mdb_obj_t;

@@ -1,8 +1,6 @@
 #!/usr/bin/env python3
-"""sqlcheck.py ITUNES_DIR [EXPECTED_ITEMS]: open the three SQLite databases of a library with the stock sqlite3 module,
-run integrity_check on each and count the tracks. Prints SQL_OK <n> or SQL_FAIL <reason> (exit 1)."""
+# NanoSync v0.0.0 - developed by tenspav
 import os, sqlite3, sys
-
 d = sys.argv[1]
 want = int(sys.argv[2]) if len(sys.argv) > 2 else None
 itl = os.path.join(d, "iTunes Library.itlp")
@@ -20,6 +18,6 @@ try:
     if want is not None and n != want:
         raise RuntimeError("expected %d items, found %d" % (want, n))
     print("SQL_OK %d" % n)
-except Exception as e:  # noqa
+except Exception as e:
     print("SQL_FAIL %s" % e)
     sys.exit(1)

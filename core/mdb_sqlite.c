@@ -1,5 +1,5 @@
+/* NanoSync v0.0.0 - developed by tenspav */
 #include "mdb_sqlite.h"
-
 #define PG MDB_SQL_PAGE
 static void mcpy(void *d, const void *s, size_t n) { uint8_t *a = d; const uint8_t *b = s; while (n--) *a++ = *b++; }
 static void mset(void *d, int v, size_t n) { uint8_t *a = d; while (n--) *a++ = (uint8_t)v; }
@@ -15,8 +15,6 @@ uint64_t mdb_f64_from_u32(uint32_t v) {
     e = 1023 + m; frac = ((uint64_t)v << (52 - m)) & 0xFFFFFFFFFFFFFULL;
     return (e << 52) | frac;
 }
-
-/* ---- varints and records ---- */
 static int varint_len(uint64_t v) { int n = 1; if (v > 0x00FFFFFFFFFFFFFFULL) return 9; while (v >= 0x80) { v >>= 7; n++; } return n; }
 static int put_varint(uint8_t *p, uint64_t v) {
     int i, n;
@@ -77,12 +75,9 @@ static int vcmp(const mval_t *a, const mval_t *b) {
     if (ca == 1) return a->i < b->i ? -1 : a->i > b->i ? 1 : 0;
     return 0;
 }
-
-/* ---- B-tree builder ---- */
 typedef struct { uint8_t *out; uint32_t cap_pages, next; mdb_arena_t *ar; int err; } S;
 typedef struct { const uint8_t *key; uint32_t klen; int64_t rowid; const mval_t *vals; int nvals; } ent_t;
 typedef struct { uint32_t pg; int64_t maxrow; const ent_t *div; } node_t;
-
 static uint8_t *page(S *s, uint32_t pgno) {
     if (pgno == 0 || pgno > s->cap_pages) { s->err = -2; return 0; }
     return s->out + (size_t)(pgno - 1) * PG;
@@ -90,7 +85,6 @@ static uint8_t *page(S *s, uint32_t pgno) {
 static uint32_t newpage(S *s) { uint32_t p = s->next++; if (p > s->cap_pages) s->err = -2; return p; }
 static void w16(uint8_t *p, uint32_t v) { p[0] = (uint8_t)(v >> 8); p[1] = (uint8_t)v; }
 static void w32(uint8_t *p, uint32_t v) { p[0] = (uint8_t)(v >> 24); p[1] = (uint8_t)(v >> 16); p[2] = (uint8_t)(v >> 8); p[3] = (uint8_t)v; }
-
 static void write_page(S *s, uint32_t pgno, uint8_t type, uint32_t right, uint8_t **cells, const uint32_t *clen, uint32_t nc) {
     uint8_t *p = page(s, pgno); uint32_t hdr = (type == 0x0d || type == 0x0a) ? 8 : 12, base = (pgno == 1) ? 100 : 0, i, top = PG;
     if (!p) return;
@@ -100,7 +94,6 @@ static void write_page(S *s, uint32_t pgno, uint8_t type, uint32_t right, uint8_
     w16(p + base + 5, top);
     if (hdr == 12) w32(p + base + 8, right);
 }
-
 static void build_tree(S *s, int is_index, const ent_t *e, uint32_t n, uint32_t root) {
     uint32_t a = 0, nodes = 0, i;
     node_t *lvl, *nxt; uint8_t *cb, **cp; uint32_t *cl;
@@ -120,7 +113,7 @@ static void build_tree(S *s, int is_index, const ent_t *e, uint32_t n, uint32_t 
         }
         if (nc == 0 && n > 0) { s->err = -4; return; }
         last = (j >= n);
-        if (!last && is_index && j == n - 1 && nc > 1) { nc--; j--; }   /* avoid an empty leaf after promotion */
+        if (!last && is_index && j == n - 1 && nc > 1) { nc--; j--; }
         pgno = (a == 0 && last) ? root : newpage(s);
         if (s->err) return;
         for (k = 0; k < nc; k++) {
@@ -167,8 +160,6 @@ static void build_tree(S *s, int is_index, const ent_t *e, uint32_t n, uint32_t 
         nodes = nn;
     }
 }
-
-/* stable merge sort */
 typedef int (*cmpf)(const ent_t *, const ent_t *);
 static int cmp_rowid(const ent_t *a, const ent_t *b) { return a->rowid < b->rowid ? -1 : a->rowid > b->rowid ? 1 : 0; }
 static int cmp_key(const ent_t *a, const ent_t *b) {
@@ -191,18 +182,15 @@ static int sort_ents(S *s, ent_t *e, uint32_t n, cmpf f) {
     if (a != e) for (k = 0; k < n; k++) e[k] = a[k];
     return 0;
 }
-
 static mval_t vtext(const char *s) { mval_t v; uint32_t n = 0; while (s && s[n]) n++; v.t = MV_TEXT; v.i = 0; v.s = s; v.n = n; return v; }
 static mval_t vint(int64_t x) { mval_t v; v.t = MV_INT; v.i = x; v.s = 0; v.n = 0; return v; }
 static mval_t vnull(void) { mval_t v; v.t = MV_NULL; v.i = 0; v.s = 0; v.n = 0; return v; }
-
 int mdb_sqlite_write(const mdb_schema_t *sc, mtab_t *tabs, uint8_t *out, size_t cap, size_t *outlen, mdb_arena_t *ar) {
     S s; uint32_t k, i, nobj = sc->nobj, roots = nobj + 1; int r;
     ent_t *master; uint8_t *hdr;
     s.out = out; s.cap_pages = (uint32_t)(cap / PG); s.next = roots + 1; s.ar = ar; s.err = 0;
     master = mdb_aalloc(ar, sizeof(ent_t) * (nobj + 1));
     if (!master) return -3;
-    /* tables and indexes */
     for (k = 0; k < nobj; k++) {
         const mdb_obj_t *ob = &sc->obj[k]; uint32_t root = k + 2; ent_t *ents; uint32_t n;
         mval_t mv[5]; uint8_t *rec; size_t rs;
@@ -240,7 +228,6 @@ int mdb_sqlite_write(const mdb_schema_t *sc, mtab_t *tabs, uint8_t *out, size_t 
             build_tree(&s, 1, ents, n, root);
         }
         if (s.err) return s.err;
-        /* sqlite_master row */
         mv[0] = vtext(ob->is_index ? "index" : "table"); mv[1] = vtext(ob->name); mv[2] = vtext(ob->tbl); mv[3] = vint(root);
         mv[4] = ob->sql ? vtext(ob->sql) : vnull();
         rs = rec_size(mv, 5); rec = mdb_aalloc(ar, rs);
@@ -250,7 +237,6 @@ int mdb_sqlite_write(const mdb_schema_t *sc, mtab_t *tabs, uint8_t *out, size_t 
     }
     build_tree(&s, 0, master, nobj, 1);
     if (s.err) return s.err;
-    /* file header (100 bytes) */
     hdr = out;
     mcpy(hdr, "SQLite format 3", 16);
     w16(hdr + 16, PG); hdr[18] = 1; hdr[19] = 1; hdr[20] = 0; hdr[21] = 64; hdr[22] = 32; hdr[23] = 32;

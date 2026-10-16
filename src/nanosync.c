@@ -1,37 +1,28 @@
-/* NanoSync - registers MP3 files in the stock player's library, on the iPod nano 7 itself.
- * LVGL app (LV_SURFACE): payload_entry/hb_shared come from the runtime (hb_lv_surface.c); only lv_app_main lives here.
- * Memory: ONE hb_os_alloc block registered as HB_APP_AUX_BLOCK (the resident frees it on unload), sized from
- * hb_os_heap_free()/hb_os_heap_largest() while keeping 1.5 MiB for the OS. A "Free RAM" button and idle release are provided.
- * Work is done in ~12 ms slices per frame (ns_step); no threads. */
+/* NanoSync v0.0.0 - developed by tenspav */
 #include "hb_sdk.h"
 #include "hb_heap.h"
 #include "lvgl/lvgl.h"
 #include "ns_engine.h"
 #include "ns_hb.h"
-
-#define RESERVE_BYTES   (1536u * 1024u)       /* heap left free for the OS */
+#define RESERVE_BYTES   (1536u * 1024u)
 #define BLOCK_MAX       (2048u * 1024u)
-#define IDLE_FREE_MS    (5u * 60u * 1000u)    /* no touch for 5 min (and nothing in progress) -> free the RAM */
-
+#define IDLE_FREE_MS    (5u * 60u * 1000u)
 static ns_t *g_ns;
 static uint8_t *g_blk;
 static int g_freed, g_nomem;
 static uint32_t g_heap0, g_large0;
 static lv_obj_t *lbl_title, *lbl_state, *lbl_state2, *lbl_lib, *lbl_list, *lbl_stage, *bar, *btn_imp, *lbl_mem;
 static char listbuf[1400];
-
 static void ui_set_enabled(lv_obj_t *b, int en) { if (en) lv_obj_remove_state(b, LV_STATE_DISABLED); else lv_obj_add_state(b, LV_STATE_DISABLED); }
-
 static void block_free(void) {
     ns_hb_close_all();
     if (g_blk) { if (HB_APP_AUX_BLOCK == g_blk) HB_APP_AUX_BLOCK = 0; hb_os_free(g_blk); }
     g_blk = 0; g_ns = 0;
 }
-/* allocate the single block; returns 0 on success */
 static int block_alloc(void) {
     uint32_t f = hb_os_heap_free(), lg = hb_os_heap_largest(), cap, tries;
     g_heap0 = f; g_large0 = lg;
-    if (HB_APP_AUX_BLOCK) { hb_os_free(HB_APP_AUX_BLOCK); HB_APP_AUX_BLOCK = 0; }   /* leftover of a previous launch */
+    if (HB_APP_AUX_BLOCK) { hb_os_free(HB_APP_AUX_BLOCK); HB_APP_AUX_BLOCK = 0; }
     cap = f > RESERVE_BYTES ? f - RESERVE_BYTES : 0;
     if (cap > lg) cap = lg;
     if (cap > BLOCK_MAX) cap = BLOCK_MAX;
@@ -49,22 +40,20 @@ static int block_alloc(void) {
     }
     return -1;
 }
-
 static void on_import(lv_event_t *e) { (void)e; if (g_ns) ns_request_import(g_ns); }
 static void on_rescan(lv_event_t *e) {
     (void)e;
-    if (!g_ns) { g_freed = 0; g_nomem = 0; if (block_alloc()) g_nomem = 1; return; }     /* reload after "Free RAM" */
+    if (!g_ns) { g_freed = 0; g_nomem = 0; if (block_alloc()) g_nomem = 1; return; }
     ns_request_rescan(g_ns);
 }
 static void on_free(lv_event_t *e) {
     ns_phase p; (void)e;
     if (!g_ns) return;
     p = ns_get_phase(g_ns);
-    if (!(p == NS_P_READY || p == NS_P_DONE || p == NS_P_FAIL)) return;     /* never in the middle of an import */
+    if (!(p == NS_P_READY || p == NS_P_DONE || p == NS_P_FAIL)) return;
     block_free(); g_freed = 1;
     hb_trace_log("NSFREE  ", g_heap0, hb_os_heap_free());
 }
-
 static void frame_cb(void) {
     if (g_ns) {
         ns_step(g_ns, 12000);
@@ -72,7 +61,6 @@ static void frame_cb(void) {
           if (lv_display_get_inactive_time(0) > IDLE_FREE_MS && (p == NS_P_READY || p == NS_P_DONE || p == NS_P_FAIL)) { block_free(); g_freed = 1; } }
     }
 }
-
 static const char *stage_name(ns_stage s) {
     switch (s) { case NS_ST_COPY: return "Copying"; case NS_ST_GEN: return "Generating"; case NS_ST_WRITE: return "Writing"; case NS_ST_VERIFY: return "Verifying"; default: return ""; }
 }
@@ -95,7 +83,7 @@ static void refresh(lv_timer_t *t) {
             else lv_label_set_text_fmt(lbl_lib, "Library: %d tracks%s", ns_lib_before(g_ns), ns_dryrun(g_ns) ? "  [DRY RUN]" : "");
         } else lv_label_set_text(lbl_lib, "Library: ?");
         listbuf[0] = 0;
-        if (p == NS_P_FAIL || p == NS_P_DONE) {                           /* last error: code / raw return / requested-obtained / position / file */
+        if (p == NS_P_FAIL || p == NS_P_DONE) {
             const char *dg = ns_get_diag(g_ns);
             while (*dg && o < 420) listbuf[o++] = *dg++;
             if (o) listbuf[o++] = (char)10;
@@ -117,7 +105,6 @@ static void refresh(lv_timer_t *t) {
         ui_set_enabled(btn_imp, p == NS_P_READY && n > 0);
     }
 }
-
 static lv_obj_t *mkbtn(lv_obj_t *scr, const char *txt, int x, int w, lv_event_cb_t cb) {
     lv_obj_t *b = lv_button_create(scr), *l;
     lv_obj_set_size(b, w, 40); lv_obj_align(b, LV_ALIGN_BOTTOM_LEFT, x, -8);
@@ -125,7 +112,6 @@ static lv_obj_t *mkbtn(lv_obj_t *scr, const char *txt, int x, int w, lv_event_cb
     l = lv_label_create(b); lv_label_set_text(l, txt); lv_obj_center(l);
     return b;
 }
-
 HB_APP_ENTRY(payload_entry) {
     lv_obj_t *scr = lv_screen_active(), *box;
     lv_obj_set_style_bg_color(scr, lv_color_hex(0x101826), 0);

@@ -1,4 +1,4 @@
-/* Minimal SHA-1, integers only, no malloc. */
+/* NanoSync v0.0.0 - developed by tenspav */
 #ifndef MDB_SHA1_H
 #define MDB_SHA1_H
 #include <stdint.h>

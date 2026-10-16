@@ -1,8 +1,6 @@
-/* NanoSync - cover art: see ns_art.h */
+/* NanoSync v0.0.0 - developed by tenspav */
 #include "ns_art.h"
-
 const ns_fmt NS_FMT[NS_FMT_N] = { {1010, 240, 240, 480, 480u * 240u}, {1013, 50, 50, 100, 100u * 50u}, {1015, 58, 58, 116, 116u * 58u}, {1016, 57, 57, 116, 116u * 57u} };
-
 static uint32_t be32(const uint8_t *p) { return ((uint32_t)p[0] << 24) | ((uint32_t)p[1] << 16) | ((uint32_t)p[2] << 8) | p[3]; }
 static uint32_t ss32(const uint8_t *p) { return ((uint32_t)(p[0] & 0x7f) << 21) | ((uint32_t)(p[1] & 0x7f) << 14) | ((uint32_t)(p[2] & 0x7f) << 7) | (p[3] & 0x7f); }
 static uint32_t le32(const uint8_t *p) { return p[0] | ((uint32_t)p[1] << 8) | ((uint32_t)p[2] << 16) | ((uint32_t)p[3] << 24); }
@@ -11,8 +9,6 @@ static void wl64(uint8_t *p, uint64_t v) { wl32(p, (uint32_t)v); wl32(p + 4, (ui
 static void zero(void *d, uint32_t n) { uint8_t *a = d; while (n--) *a++ = 0; }
 static void cpy(void *d, const void *s, uint32_t n) { uint8_t *a = d; const uint8_t *b = s; while (n--) *a++ = *b++; }
 static void move(void *d, const void *s, uint32_t n) { uint8_t *a = d; const uint8_t *b = s; if (a < b) { while (n--) *a++ = *b++; } else { a += n; b += n; while (n--) *--a = *--b; } }
-
-/* ------------------------------------------------------------------------------------------ ID3 */
 int ns_id3_cover(const uint8_t *p, uint32_t n, uint32_t *off, uint32_t *len) {
     uint32_t ver, flags, end, pos, bo = 0, bl = 0; int best = 0, bt = -1, unsup = 0;
     if (n < 10 || p[0] != 'I' || p[1] != 'D' || p[2] != '3') return 0;
@@ -45,8 +41,6 @@ int ns_id3_cover(const uint8_t *p, uint32_t n, uint32_t *off, uint32_t *len) {
     *off = bo; *len = bl;
     return (bl >= 3 && p[bo] == 0xFF && p[bo + 1] == 0xD8) ? 1 : -1;
 }
-
-/* ------------------------------------------------------------------------------------------ decoder */
 static size_t cv_in(JDEC *jd, uint8_t *buf, size_t nb) {
     ns_cv *c = (ns_cv *)jd->device; uint32_t r = c->srclen - c->srcpos;
     if (nb > r) nb = r;
@@ -54,7 +48,7 @@ static size_t cv_in(JDEC *jd, uint8_t *buf, size_t nb) {
     c->srcpos += (uint32_t)nb; return nb;
 }
 static void fit(uint32_t sw, uint32_t sh, uint32_t fw, uint32_t fh, uint32_t *dw, uint32_t *dh) {
-    if (sw <= fw && sh <= fh) { *dw = sw; *dh = sh; return; }                  /* no upscaling */
+    if (sw <= fw && sh <= fh) { *dw = sw; *dh = sh; return; }
     if ((uint64_t)sw * fh >= (uint64_t)sh * fw) { *dw = fw; *dh = (sh * fw + sw / 2) / sw; if (!*dh) *dh = 1; if (*dh > fh) *dh = fh; }
     else { *dh = fh; *dw = (sw * fh + sh / 2) / sh; if (!*dw) *dw = 1; if (*dw > fw) *dw = fw; }
 }
@@ -62,13 +56,12 @@ static int pg_sof(const uint8_t *d, uint32_t n);
 static int pg_segment(ns_cv *cv, uint8_t *aux, uint32_t auxsz);
 static int pg_step(ns_cv *cv, uint32_t n);
 uint32_t ns_cv_scratch_need(void) { return 4u * NS_CV_MAXW * 6u + 405u * 8u + 22u * 405u * 12u + 2048u; }
-/* 1-axis area reduction map: source pixel i covers [i*d/s, (i+1)*d/s) in destination units; weights in 1/16: w0 goes to destination m[i], 16-w0 to the next one */
 static void axis_map(uint32_t s, uint32_t d, uint16_t *m, uint8_t *w, uint32_t *tot) {
     uint32_t i;
     for (i = 0; i < d; i++) tot[i] = 0;
     for (i = 0; i < s; i++) {
         uint32_t dx = (uint32_t)(((uint64_t)i * d) / s), w0 = 16;
-        if (dx + 1 < d && (uint64_t)(i + 1) * d > (uint64_t)(dx + 1) * s) {      /* crosses the destination pixel boundary */
+        if (dx + 1 < d && (uint64_t)(i + 1) * d > (uint64_t)(dx + 1) * s) {
             w0 = (uint32_t)(((uint64_t)((dx + 1) * s - i * d) * 16u + d / 2u) / d);
             if (w0 > 16) w0 = 16;
         }
@@ -78,20 +71,19 @@ static void axis_map(uint32_t s, uint32_t d, uint16_t *m, uint8_t *w, uint32_t *
 int ns_cv_begin(ns_cv *c, const uint8_t *img, uint32_t len, uint8_t *pool, uint32_t poolsz, uint8_t *scratch, uint32_t scsz, uint8_t *const out[NS_FMT_N], uint8_t *aux, uint32_t auxsz, uint8_t *aux2, uint32_t aux2sz) {
     uint32_t t, i, wd0, hd0; uint8_t *sp = scratch, *se = scratch + scsz; JRESULT rc;
     zero(c, sizeof *c); c->src = img; c->srclen = len;
-    if (pg_sof(img, len)) {                                                    /* progressive JPEG: low frequencies, output at 1/4 */
+    if (pg_sof(img, len)) {
         ns_pg *g = &c->pg; int r; c->prog = 1; g->d = img; g->n = len; g->aux[0] = aux; g->auxsz[0] = auxsz; g->aux[1] = aux2; g->auxsz[1] = aux2sz;
         if (!aux || auxsz < 1024u) return -2;
         while (!g->sof) { r = pg_segment(c, aux, auxsz); if (r == -3) return -3; if (r) return -1; }
         c->W0 = g->W; c->H0 = g->H; c->sc = 1;
         c->Ws = ((c->W0 - 1) >> 1) + 1; c->Hs = ((c->H0 - 1) >> 1) + 1;
-        if (c->Ws < 200u && c->Hs < 200u) return -3;                          /* too small */
+        if (c->Ws < 200u && c->Hs < 200u) return -3;
     } else {
         rc = jd_prepare(&c->jd, cv_in, pool, poolsz, c);
         if (rc == JDR_MEM1 || rc == JDR_MEM2) return -2;
         if (rc != JDR_OK) return -1;
         c->W0 = c->jd.width; c->H0 = c->jd.height; if (!c->W0 || !c->H0) return -1;
         fit(c->W0, c->H0, NS_FMT[0].w, NS_FMT[0].h, &wd0, &hd0);
-        /* descale only while >= 2x the final size remains (area reduction needs spare samples to stay sharp) */
         c->sc = 0; for (i = 3; i > 0; i--) if (((c->W0 - 1) >> i) + 1 >= 2u * wd0 && ((c->H0 - 1) >> i) + 1 >= 2u * hd0) { c->sc = (uint8_t)i; break; }
         while (c->sc < 3 && (((c->W0 - 1) >> c->sc) + 1 > NS_CV_MAXW || ((c->H0 - 1) >> c->sc) + 1 > NS_CV_MAXW)) c->sc++;
         c->Ws = ((c->W0 - 1) >> c->sc) + 1; c->Hs = ((c->H0 - 1) >> c->sc) + 1;
@@ -132,8 +124,6 @@ static void cv_emit(ns_cv *c, uint32_t t, uint32_t dy) {
 static void cv_flush(ns_cv *c, uint32_t t, uint32_t upto) { while (c->t[t].flushed < upto && c->t[t].flushed < c->t[t].Hd) cv_emit(c, t, c->t[t].flushed++); }
 static int cv_out(JDEC *jd, void *bitmap, JRECT *rc);
 static int cv_acc(ns_cv *c, const uint8_t *bm, JRECT *rc);
-/* The LVGL TJpgDec: (1) delivers pixels in B,G,R order; (2) does NOT do 1/2, 1/4 descaling (smaller rect only, full-size data => scrambled image):
-   so it always decodes at full size and the 2^sc x 2^sc average descaling is done here. */
 static int cv_out(JDEC *jd, void *bitmap, JRECT *rc) {
     ns_cv *c = (ns_cv *)jd->device; uint8_t *bm = (uint8_t *)bitmap; uint32_t w = (uint32_t)rc->right - rc->left + 1u, h = (uint32_t)rc->bottom - rc->top + 1u, i;
     if (!c->sc) { for (i = 0; i < w * h; i++) { uint8_t t = bm[3 * i]; bm[3 * i] = bm[3 * i + 2]; bm[3 * i + 2] = t; } return cv_acc(c, bm, rc); }
@@ -171,13 +161,11 @@ static int cv_acc(ns_cv *c, const uint8_t *bm, JRECT *rc) {
     }
     return 1;
 }
-/* ---------------------------------------------------------------------------------------- progressive JPEG (low frequencies only) */
-/* slot = row*4 + column (u = column = horizontal frequency, v = row). zigzag -> slot and slot -> zigzag */
 static const int8_t PG_SLOT[25] = {0, 1, 4, 8, 5, 2, 3, 6, 9, 12, -1, 13, 10, 7, -1, -1, -1, 11, 14, -1, -1, -1, -1, -1, 15};
 static const uint8_t PG_ZZ[NS_PG_NCO] = {0, 1, 5, 6, 2, 4, 7, 13, 3, 8, 12, 17, 9, 11, 18, 24};
-static const int8_t PG_CAC[16] = {-1, 0, -1, -1, 1, 2, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1};      /* chroma: only (0,1), (1,0), (1,1) */
+static const int8_t PG_CAC[16] = {-1, 0, -1, -1, 1, 2, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1};
 static uint32_t pg_u16(const uint8_t *p) { return ((uint32_t)p[0] << 8) | p[1]; }
-static int pg_sof(const uint8_t *d, uint32_t n) {          /* 1 = progressive (SOF2), 0 = other/baseline */
+static int pg_sof(const uint8_t *d, uint32_t n) {
     uint32_t pos = 2;
     while (pos + 4 <= n && d[pos] == 0xFF) {
         uint8_t m = d[pos + 1];
@@ -207,18 +195,17 @@ static int pg_huff(ns_pg *g, uint32_t cls, uint32_t id) {
     return -1;
 }
 static int32_t pg_ext(int32_t v, uint32_t s) { return (s && v < (1 << (s - 1))) ? v - (1 << s) + 1 : v; }
-static void pg_align_restart(ns_pg *g) {                  /* end of restart interval: align, skip RSTn, reset predictions */
+static void pg_align_restart(ns_pg *g) {
     g->bitcnt = 0; g->hit = 0;
     while (g->pos + 1 < g->n && !(g->d[g->pos] == 0xFF && g->d[g->pos + 1] >= 0xD0 && g->d[g->pos + 1] <= 0xD7)) { if (g->d[g->pos] == 0xFF && g->d[g->pos + 1] != 0 && g->d[g->pos + 1] != 0xFF) return; g->pos++; }
     if (g->pos + 1 < g->n) g->pos += 2;
     g->pred[0] = g->pred[1] = g->pred[2] = 0; g->eobrun = 0;
 }
-static int pg_next_marker(ns_pg *g) {                      /* position at FF xx (xx != 0, != RST) */
+static int pg_next_marker(ns_pg *g) {
     g->bitcnt = 0; g->hit = 0;
     while (g->pos + 1 < g->n) { if (g->d[g->pos] == 0xFF && g->d[g->pos + 1] != 0 && g->d[g->pos + 1] != 0xFF && !(g->d[g->pos + 1] >= 0xD0 && g->d[g->pos + 1] <= 0xD7)) return 0; g->pos++; }
     return -1;
 }
-/* one header segment; 0 = ok, 1 = ready to render (EOI), 2 = starts a scan, <0 error */
 static int pg_segment(ns_cv *cv, uint8_t *aux, uint32_t auxsz) {
     ns_pg *g = &cv->pg; uint8_t m; uint32_t len, i, j; const uint8_t *p;
     if (pg_next_marker(g)) return 1;
@@ -255,7 +242,7 @@ static int pg_segment(ns_cv *cv, uint8_t *aux, uint32_t auxsz) {
             g->c[i].bw = g->mcux * g->c[i].h; g->c[i].bh = g->mcuy * g->c[i].v; g->c[i].cbw = (cw + 7) / 8; g->c[i].cbh = (ch + 7) / 8;
             g->c[i].nac = i == 0 ? (uint8_t)(NS_PG_NCO - 1u) : 3u;
         }
-        {   /* DC (int16) and AC (int8) of each component: first fit into the two regions */
+        {
             uint8_t *rp[2]; uint32_t rl[2], r, ok = 1; rp[0] = g->aux[0]; rl[0] = g->auxsz[0] & ~1u; rp[1] = g->aux[1]; rl[1] = g->aux[1] ? (g->auxsz[1] & ~1u) : 0;
             for (i = 0; i < g->nc && ok; i++) {
                 uint32_t nb = g->c[i].bw * g->c[i].bh, sz[2]; sz[0] = nb * 2u; sz[1] = (nb * g->c[i].nac + 1u) & ~1u;
@@ -275,9 +262,9 @@ static int pg_segment(ns_cv *cv, uint8_t *aux, uint32_t auxsz) {
         ns = p[0]; if (ns < 1 || ns > 3 || len < 1 + 2 * ns + 3) return -1;
         for (i = 0; i < ns; i++) { for (j = 0; j < g->nc && g->c[j].id != p[1 + 2 * i]; j++) ; if (j >= g->nc) return -1; g->ci[i] = (uint8_t)j; g->c[j].td = p[2 + 2 * i] >> 4; g->c[j].ta = p[2 + 2 * i] & 15; }
         g->ns = (uint8_t)ns; g->Ss = p[1 + 2 * ns]; g->Se = p[2 + 2 * ns]; g->Ah = p[3 + 2 * ns] >> 4; g->Al = p[3 + 2 * ns] & 15;
-        g->pos += 2 + 2 + len;                                              /* entropy-coded data starts here */
+        g->pos += 2 + 2 + len;
         g->bitcnt = 0; g->hit = 0; g->eobrun = 0; g->pred[0] = g->pred[1] = g->pred[2] = 0; g->idx = 0; g->rleft = g->ri;
-        g->skip = (g->Ss > 24) || (g->Ss > 0 && g->Ah > 0) || g->Se > 63 || g->Al > 7;          /* AC beyond zz24 or AC refinement: ignored */
+        g->skip = (g->Ss > 24) || (g->Ss > 0 && g->Ah > 0) || g->Se > 63 || g->Al > 7;
         if (g->Ss == 0 && g->Se != 0) g->skip = 1;
         g->total = g->ns > 1 ? g->mcux * g->mcuy : g->c[g->ci[0]].cbw * g->c[g->ci[0]].cbh;
         return 2; }
@@ -285,13 +272,12 @@ static int pg_segment(ns_cv *cv, uint8_t *aux, uint32_t auxsz) {
     }
     g->pos += 2 + 2 + len; (void)cv; return 0;
 }
-/* up to nu units of the current scan (MCU in interleaved DC scans, block in the others); 1 = finished */
 static int pg_scan(ns_cv *cv, uint32_t nu) {
     ns_pg *g = &cv->pg;
     while (nu-- && g->idx < g->total) {
         if (g->ri && g->idx && !g->rleft) { pg_align_restart(g); g->rleft = g->ri; }
         if (g->ri) g->rleft--;
-        if (g->Ss == 0) {                                                   /* DC (first pass or refinement) */
+        if (g->Ss == 0) {
             uint32_t ci, vy, hx, mxx = g->idx % g->mcux, myy = g->idx / g->mcux;
             for (ci = 0; ci < g->ns; ci++) {
                 uint32_t k = g->ci[ci], hh = g->ns > 1 ? g->c[k].h : 1, vv = g->ns > 1 ? g->c[k].v : 1;
@@ -305,7 +291,7 @@ static int pg_scan(ns_cv *cv, uint32_t nu) {
                 }
                 if (g->ns == 1) break;
             }
-        } else {                                                            /* AC, first pass: 1 component */
+        } else {
             uint32_t k0 = g->ci[0], bx = g->idx % g->c[k0].cbw, by = g->idx / g->c[k0].cbw, k, nac = g->c[k0].nac;
             int8_t *b = g->c[k0].ac + (by * g->c[k0].bw + bx) * nac;
             if (g->eobrun) { g->eobrun--; }
@@ -314,11 +300,11 @@ static int pg_scan(ns_cv *cv, uint32_t nu) {
                 r = rs >> 4; s = rs & 15;
                 if (!s) { if (r < 15) { g->eobrun = (1u << r) - 1u; if (r) g->eobrun += (uint32_t)pg_bits(g, (uint32_t)r); break; } k += 15; continue; }
                 k += (uint32_t)r; if (k > 63) return -1;
-                int ai = (k <= 24 && PG_SLOT[k] > 0) ? (k0 == g->ci[0] && g->ci[0] == 0 ? PG_SLOT[k] - 1 : PG_CAC[PG_SLOT[k]]) : -1;
-                if (ai >= 0 && (uint32_t)ai < nac) {
+                int ax = (k <= 24 && PG_SLOT[k] > 0) ? (k0 == g->ci[0] && g->ci[0] == 0 ? PG_SLOT[k] - 1 : PG_CAC[PG_SLOT[k]]) : -1;
+                if (ax >= 0 && (uint32_t)ax < nac) {
                     int32_t v = pg_ext(pg_bits(g, (uint32_t)s), (uint32_t)s) * (1 << g->Al);
-                    if (g->Al && v) v += v > 0 ? (1 << (g->Al - 1)) : -(1 << (g->Al - 1));      /* without refinement: the true value is in the middle of the interval */
-                    b[ai] = (int8_t)(v > 127 ? 127 : (v < -127 ? -127 : v));
+                    if (g->Al && v) v += v > 0 ? (1 << (g->Al - 1)) : -(1 << (g->Al - 1));
+                    b[ax] = (int8_t)(v > 127 ? 127 : (v < -127 ? -127 : v));
                 } else pg_bits(g, (uint32_t)s);
             }
         }
@@ -326,11 +312,9 @@ static int pg_scan(ns_cv *cv, uint32_t nu) {
     }
     return g->idx >= g->total ? 1 : 0;
 }
-/* 4x4 IDCT of an 8x8 block = average of each 2x2 cell from the coefficients (u,v) < 4 (the rest are 0): p(a,b) = 1/4 * sum C(u)C(v) F(u,v) m_u(a) m_v(b),
-   m_u(a) = average of cos((2x+1)u*pi/16) over the 2 pixels of cell a. Table A[u][a] = 256*C(u)*m_u(a). */
 static const int16_t PG_A[4][4] = {{181, 181, 181, 181}, {232, 96, -96, -232}, {167, -167, -167, 167}, {81, -197, 197, -81}};
 static void pg_idct4(int16_t dc, const int8_t *ac, uint32_t luma, const uint16_t *q, uint8_t out[16]) {
-    int32_t f[4][4], t[4][4], u, v, a, b;                                  /* f[v][u] */
+    int32_t f[4][4], t[4][4], u, v, a, b;
     for (v = 0; v < 4; v++) for (u = 0; u < 4; u++) f[v][u] = 0;
     f[0][0] = dc * (int32_t)q[0];
     if (luma) { for (v = 0; v < 4; v++) for (u = 0; u < 4; u++) { int s = v * 4 + u; if (s) f[v][u] = ac[s - 1] * (int32_t)q[s]; } }
@@ -343,7 +327,7 @@ static void pg_idct4(int16_t dc, const int8_t *ac, uint32_t luma, const uint16_t
 }
 static int pg_render_mcu(ns_cv *cv) {
     ns_pg *g = &cv->pg; uint32_t pw = g->hmax * 4u, ph = g->vmax * 4u, i, j, k, hx, vy; uint8_t bm[8 * 8 * 3]; JRECT r;
-    uint8_t blk[3][2][2][16];                                              /* [component][block row][block column][4x4] */
+    uint8_t blk[3][2][2][16];
     for (k = 0; k < g->nc; k++) for (vy = 0; vy < g->c[k].v; vy++) for (hx = 0; hx < g->c[k].h; hx++) {
         uint32_t bx = g->mx_i * g->c[k].h + hx, by = g->my_i * g->c[k].v + vy, bi = by * g->c[k].bw + bx;
         pg_idct4(g->c[k].dc[bi], g->c[k].ac + bi * g->c[k].nac, k == 0, g->qt[g->c[k].tq], blk[k][vy][hx]);
@@ -351,7 +335,7 @@ static int pg_render_mcu(ns_cv *cv) {
     for (j = 0; j < ph; j++) for (i = 0; i < pw; i++) {
         int v[3] = {128, 128, 128};
         for (k = 0; k < g->nc; k++) {
-            uint32_t cx = i * g->c[k].h / g->hmax, cy = j * g->c[k].v / g->vmax;            /* component sample (4x4 grid per block) */
+            uint32_t cx = i * g->c[k].h / g->hmax, cy = j * g->c[k].v / g->vmax;
             v[k] = blk[k][cy >> 2][cx >> 2][(cy & 3) * 4 + (cx & 3)];
         }
         {   int y = v[0], cb = v[1] - 128, cr = v[2] - 128, R, G, B;
@@ -361,7 +345,7 @@ static int pg_render_mcu(ns_cv *cv) {
     }
     r.left = (uint16_t)(g->mx_i * pw); r.top = (uint16_t)(g->my_i * ph); r.right = (uint16_t)(r.left + pw - 1); r.bottom = (uint16_t)(r.top + ph - 1);
     if (r.left >= cv->Ws || r.top >= cv->Hs) return 0;
-    if (r.right >= cv->Ws) { /* crop: repack the visible columns */
+    if (r.right >= cv->Ws) {
         uint32_t w2 = cv->Ws - r.left, jj, ii; uint8_t tmp[8 * 8 * 3];
         for (jj = 0; jj < ph; jj++) for (ii = 0; ii < w2; ii++) { tmp[(jj * w2 + ii) * 3] = bm[(jj * pw + ii) * 3]; tmp[(jj * w2 + ii) * 3 + 1] = bm[(jj * pw + ii) * 3 + 1]; tmp[(jj * w2 + ii) * 3 + 2] = bm[(jj * pw + ii) * 3 + 2]; }
         r.right = (uint16_t)(cv->Ws - 1); if (r.bottom >= cv->Hs) r.bottom = (uint16_t)(cv->Hs - 1);
@@ -376,8 +360,8 @@ static int pg_step(ns_cv *cv, uint32_t n) {
     while (n--) {
         if (g->phase == 0) { int r = pg_segment(cv, cv->pg.aux[0], cv->pg.auxsz[0]); if (r == 2) g->phase = g->skip ? 3 : 1; else if (r == 1) { if (!g->sof) return -1; g->phase = 2; g->mx_i = g->my_i = 0; } else if (r < 0) return -1; }
         else if (g->phase == 1) { int r = pg_scan(cv, 24); if (r < 0) return -1; if (r == 1) g->phase = 3; }
-        else if (g->phase == 3) { g->phase = 0; }                                    /* scan ignored or finished: continue to the next marker */
-        else {                                                                       /* render one MCU */
+        else if (g->phase == 3) { g->phase = 0; }
+        else {
             if (pg_render_mcu(cv) < 0) return -1;
             g->mx_i++;
             if (g->mx_i >= g->mcux) {
@@ -406,8 +390,6 @@ int ns_cv_step(ns_cv *c, uint32_t nmcu) {
     }
     return 0;
 }
-
-/* ------------------------------------------------------------------------------------------ ArtworkDB */
 typedef struct { uint32_t next_id, maxid, off[4], tl[4], hl[4]; uint32_t have; } adb_info;
 static int adb_parse(const uint8_t *d, uint32_t n, adb_info *o) {
     uint32_t hl, off, i; zero(o, sizeof *o);
@@ -465,7 +447,7 @@ static uint32_t put_ds(uint8_t *o, uint32_t typ, const char *ltag, uint32_t coun
 uint32_t ns_adb_build(const uint8_t *old, uint32_t old_len, uint32_t n, const uint32_t *ids, const uint64_t *owner, const uint32_t *srcsz,
                       const uint32_t offs[NS_FMT_N][8], uint32_t next_id, uint8_t *out, uint32_t cap) {
     uint32_t j, k, pos;
-    if (!old || !old_len) {                                                     /* create */
+    if (!old || !old_len) {
         uint32_t imgs = n * MHII_LEN, fm = NS_FMT_N * 124u, total = 132u + (96 + 92 + imgs) + (96 + 92) + (96 + 92 + fm);
         if (total > cap) return 0;
         hdr(out, "mhfd", 132, total, 0); wl32(out + 0x10, 6); wl32(out + 0x14, 3); wl32(out + 0x18, 0); wl32(out + 0x1C, next_id); wl32(out + 0x30, 2);
@@ -475,17 +457,16 @@ uint32_t ns_adb_build(const uint8_t *old, uint32_t old_len, uint32_t n, const ui
         pos += put_ds(out + pos, 3, "mhlf", NS_FMT_N, fm);
         for (k = 0; k < NS_FMT_N; k++) pos += put_mhif(out + pos, k);
         return pos;
-    } else {                                                                    /* append to the existing one */
+    } else {
         adb_info a; uint32_t addf = 0, nf = 0, add1 = n * MHII_LEN, p1, p3, tot; uint8_t *tmp;
         if (adb_parse(old, old_len, &a) || !(a.have & 2u) || !(a.have & 8u)) return 0;
-        {   /* which MHIF are missing */
+        {
             uint32_t lst = a.off[3] + a.hl[3], cnt = le32(old + lst + 8), cc = lst + le32(old + lst + 4), i, mask = 0;
             for (i = 0; i < cnt; i++) { uint32_t fid = le32(old + cc + 0x10); for (k = 0; k < NS_FMT_N; k++) if (NS_FMT[k].id == fid) mask |= 1u << k; cc += le32(old + cc + 8); }
             for (k = 0; k < NS_FMT_N; k++) if (!(mask & (1u << k))) { addf += 124; nf++; }
             (void)tmp;
             tot = old_len + add1 + addf; if (tot > cap) return 0;
             cpy(out, old, old_len);
-            /* dataset 3 first (it comes later), then dataset 1 */
             if (a.off[3] > a.off[1]) { p3 = a.off[3] + a.tl[3]; p1 = a.off[1] + a.tl[1]; } else { return 0; }
             move(out + p3 + addf, out + p3, old_len - p3);
             { uint32_t w = p3; for (k = 0; k < NS_FMT_N; k++) if (!(mask & (1u << k))) w += put_mhif(out + w, k);
@@ -493,7 +474,6 @@ uint32_t ns_adb_build(const uint8_t *old, uint32_t old_len, uint32_t n, const ui
             move(out + p1 + add1, out + p1, old_len + addf - p1);
             { uint32_t w = p1; for (j = 0; j < n; j++) w += put_mhii(out + w, ids[j], owner[j], srcsz[j], offs, j);
               wl32(out + a.off[1] + a.hl[1] + 8, le32(out + a.off[1] + a.hl[1] + 8) + n); wl32(out + a.off[1] + 8, a.tl[1] + add1); }
-            /* dataset 3 was shifted by the block of dataset 1: only adjust the total size and the next id */
             wl32(out + 8, tot); wl32(out + 0x1C, next_id);
             return tot;
         }

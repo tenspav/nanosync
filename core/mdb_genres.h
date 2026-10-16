@@ -1,4 +1,4 @@
-/* mutagen GENRES (ID3v1 + Winamp), generated */
+/* NanoSync v0.0.0 - developed by tenspav */
 static const char *const MDB_GENRES[] = {
   "Blues",
   "Classic Rock",
